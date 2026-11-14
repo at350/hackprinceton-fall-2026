@@ -1,5 +1,7 @@
 import { demo } from "./demo";
-import type { DashState, RegionName } from "./types";
+import { clockTime, lastFour } from "./handoff";
+import { LIVE } from "./live";
+import type { DashState, Handoff, RegionName } from "./types";
 
 // The agent run as a graph: the main pipeline left to right, and the triage
 // agent's model, memory, tools and region sub-agents attached underneath it.
@@ -13,6 +15,7 @@ export interface TraceNode {
   title: string;
   subtitle: string;
   status: TraceStatus;
+  statusLabel?: string; // overrides the status's own label in node details
   startedAt: number | null; // demo ms
   endedAt: number | null;
   items: number | null; // items produced so far
@@ -25,6 +28,10 @@ export interface TraceEdge {
   from: string;
   to: string;
   kind: "main" | "ai";
+  // A node with two outputs (n8n's If): which one, and its label.
+  port?: 0 | 1;
+  label?: string;
+  items?: number | null; // items on this edge, when not the source node's count
 }
 
 export interface TraceLog {
@@ -42,6 +49,98 @@ export interface Trace {
 
 const MAIN = ["device", "spots", "map", "agent", "rank", "approval", "alert"];
 const REGION_IDS: RegionName[] = ["frontal", "temporal", "parietal", "occipital"];
+
+const node = (n: Partial<TraceNode> & Pick<TraceNode, "id" | "kind" | "title" | "subtitle">): TraceNode => ({
+  status: "idle",
+  startedAt: null,
+  endedAt: null,
+  items: null,
+  input: [],
+  output: [],
+  reasoning: [],
+  ...n,
+});
+
+/**
+ * Clinician reply (waits for a text; outputs "reply" and "no reply"), Phone call,
+ * Hand-off decision. Times here are wall-clock, from the Store record, so they
+ * sit in the node outputs rather than the run log.
+ */
+function handoffNodes(s: DashState, h: Handoff | null | undefined, notSent: boolean): { nodes: TraceNode[]; edges: TraceEdge[] } {
+  const live = !!h && !h.simulated && !notSent;
+  const texts = s.messages.filter((m) => m.role === "clinician");
+  // Each clinician text and what Lucid answered next.
+  const exchange: [string, string][] = [];
+  s.messages.forEach((m, i) => {
+    if (m.role !== "clinician") return;
+    exchange.push(["asked", m.text]);
+    const answer = s.messages.slice(i + 1).find((x) => x.role !== "agent" || x.relayed);
+    if (answer?.role === "agent") exchange.push(["Lucid answered", answer.text]);
+  });
+  const callMsg = [...s.messages].reverse().find((m) => m.role === "call");
+  const reply = h?.reply ?? null;
+  const call = h?.call ?? null;
+  const byText = reply?.via !== "call" && !!reply;
+  const delivered = h?.status === "delivered" || h?.status === "read" || !!reply || !!call;
+
+  const replyNode = node({
+    id: "reply",
+    kind: "wait",
+    title: "Clinician reply",
+    subtitle: h?.to && live ? `Waits for ${lastFour(h.to)}` : "Waits for a text",
+    status: !live ? "idle" : reply || call ? "success" : "waiting",
+    statusLabel: live && !reply && call ? "No reply, calling" : undefined,
+    items: texts.length || (live && (reply || call) ? 1 : null),
+    input: live ? [["pre-alert", delivered ? "delivered" : "sent, not confirmed delivered"]] : [],
+    output: !live ? [] : [...exchange, ["accept or decline", reply ? `${reply.decision === "accept" ? "Accepted" : "Declined"}${byText ? " by text" : " on the call"}` : call ? "None by text: phone call" : "Waiting"]],
+  });
+
+  const callNode = node({
+    id: "call",
+    kind: "action",
+    title: "Phone call",
+    subtitle: call ? (call.status === "ringing" ? "Ringing" : call.status === "answered" ? "Answered" : call.status === "no_answer" ? "No answer" : "Failed") : "If no reply",
+    status: !call ? "idle" : call.status === "ringing" ? "running" : call.status === "answered" ? "success" : "error",
+    statusLabel: call?.status === "no_answer" ? "No answer" : call?.status === "failed" ? "Failed" : undefined,
+    items: call?.status === "answered" ? 1 : null,
+    output: !call
+      ? []
+      : [
+          ["status", call.status.replace(/_/g, " ")],
+          ...(call.started_at ? ([["started", clockTime(call.started_at)]] as [string, string][]) : []),
+          ...(call.summary || callMsg?.call?.summary ? ([["summary", callMsg?.call?.summary || call.summary!]] as [string, string][]) : []),
+          ...(callMsg?.call ? ([["decision", callMsg.call.decision]] as [string, string][]) : []),
+          ...(callMsg?.call?.transcript ? ([["transcript", callMsg.call.transcript]] as [string, string][]) : []),
+        ],
+  });
+
+  const at = clockTime(reply?.at);
+  const decision = node({
+    id: "decision",
+    kind: "step",
+    title: "Hand-off decision",
+    subtitle: reply ? `${reply.decision === "accept" ? "Accepted" : "Declined"}${at ? ` ${at}` : ""}${reply.via === "call" ? " by call" : ""}` : "Accept or decline",
+    status: !reply ? "idle" : reply.decision === "accept" ? "success" : "error",
+    statusLabel: reply?.decision === "decline" ? "Declined" : undefined,
+    items: reply ? 1 : null,
+    output: !reply
+      ? []
+      : [
+          ["decision", reply.decision === "accept" ? "Accepted" : "Declined"],
+          ...(at ? ([["at", at]] as [string, string][]) : []),
+          ["by", reply.via === "call" ? "phone call" : "iMessage"],
+          ...(reply.note ? ([["note", reply.note]] as [string, string][]) : []),
+        ],
+  });
+
+  const edges: TraceEdge[] = [
+    { from: "alert", to: "reply", kind: "main" },
+    { from: "reply", to: "decision", kind: "main", port: 0, label: "reply", items: byText ? 1 : null },
+    { from: "reply", to: "call", kind: "main", port: 1, label: "no reply", items: call ? 1 : null },
+    { from: "call", to: "decision", kind: "main", items: reply?.via === "call" ? 1 : null },
+  ];
+  return { nodes: [replyNode, callNode, decision], edges };
+}
 
 function span(t: number, start: number, end: number | null): Pick<TraceNode, "status" | "startedAt" | "endedAt"> {
   if (t < start) return { status: "idle", startedAt: null, endedAt: null };
@@ -63,17 +162,6 @@ export function deriveTrace(s: DashState): Trace {
   const stated = scan !== null && scan.status !== "pending" && scan.status !== "rejected";
   const alertSent = T.alertSent ?? approval?.state === "approved";
   const agentMsgs = s.messages.filter((m) => m.role === "agent" && m.shown >= m.text.length).map((m) => m.text);
-
-  const node = (n: Partial<TraceNode> & Pick<TraceNode, "id" | "kind" | "title" | "subtitle">): TraceNode => ({
-    status: "idle",
-    startedAt: null,
-    endedAt: null,
-    items: null,
-    input: [],
-    output: [],
-    reasoning: [],
-    ...n,
-  });
 
   const device = node({
     id: "device",
@@ -232,20 +320,42 @@ export function deriveTrace(s: DashState): Trace {
     output: approval ? [["action", approval.action], ["decision", approval.state]] : [],
   });
 
-  const alert = node({
-    id: "alert",
-    kind: "action",
-    title: "Send pre-alert",
-    subtitle: "Receiving trauma center",
-    status: alertSent ? "success" : "idle",
-    items: alertSent ? 1 : null,
-    output: alertSent ? [["sent", "map, best fit, scan log"]] : [],
-  });
+  const h = s.handoff;
+  const notSent = h?.status === "failed" || h?.status === "no_one_on_call";
+  const alert = h
+    ? node({
+        id: "alert",
+        kind: "action",
+        title: "Send pre-alert",
+        subtitle: h.simulated ? "Simulated" : h.to ? `iMessage · ${lastFour(h.to)}` : "iMessage",
+        status: notSent ? "error" : "success",
+        statusLabel: h.status === "failed" ? "Not delivered" : h.status === "no_one_on_call" ? "No one on call" : undefined,
+        items: notSent ? null : 1,
+        output: [
+          ["to", h.to ? lastFour(h.to) : "nobody on call"],
+          ["channel", h.simulated ? "simulated, no hospital link" : "iMessage"],
+          ["status", h.status.replace(/_/g, " ")],
+          ...(h.sent_at ? ([["sent", clockTime(h.sent_at)]] as [string, string][]) : []),
+        ],
+      })
+    : node({
+        id: "alert",
+        kind: "action",
+        title: "Send pre-alert",
+        subtitle: "Receiving trauma center",
+        status: alertSent ? "success" : "idle",
+        items: alertSent ? 1 : null,
+        output: alertSent ? [["sent", "map, best fit, scan log"]] : [],
+      });
 
-  const nodes = [device, spots, map, agent, rank, approvalNode, alert, model, memory, simTool, fitTool, ...regions];
+  // Live mode: what became of the pre-alert, as an n8n If: a reply, or silence and a call.
+  const handoff = LIVE ? handoffNodes(s, h, notSent) : null;
+
+  const nodes = [device, spots, map, agent, rank, approvalNode, alert, ...(handoff?.nodes ?? []), model, memory, simTool, fitTool, ...regions];
 
   const edges: TraceEdge[] = [
     ...MAIN.slice(1).map((id, i) => ({ from: MAIN[i], to: id, kind: "main" as const })),
+    ...(handoff?.edges ?? []),
     { from: "model", to: "agent", kind: "ai" },
     { from: "memory", to: "agent", kind: "ai" },
     { from: "forward_sim", to: "agent", kind: "ai" },

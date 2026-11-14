@@ -120,11 +120,58 @@ export interface AgentActivity {
   text?: string;
 }
 
+/** A phone call with the receiving clinician, from its transcript message (live mode). */
+export interface CallEntry {
+  decision: "accept" | "decline" | "none";
+  summary: string;
+  transcript: string;
+}
+
+// "clinician": a text from the receiving clinician; "call": a phone call with them;
+// "event": a hand-off channel event (not a person). The last three are live mode only.
 export interface ChatMessage {
   id: string;
-  role: "agent" | "medic";
+  role: "agent" | "medic" | "clinician" | "call" | "event";
   text: string;
   shown: number; // characters revealed so far (streaming)
+  relayed?: boolean; // agent: this answer went back to the clinician by iMessage
+  call?: CallEntry; // role "call"
+}
+
+// ---- Hand-off (live mode) -------------------------------------------------
+
+// Channel status of the pre-alert, from the LangGraph Store record ["lucid", "handoffs"].
+export type HandoffStatus = "sent" | "delivered" | "read" | "failed" | "no_one_on_call";
+export type CallStatus = "ringing" | "answered" | "no_answer" | "failed";
+
+export interface HandoffReply {
+  decision: "accept" | "decline";
+  note?: string;
+  at?: string; // ISO time
+  via?: "imessage" | "call";
+}
+
+export interface HandoffCall {
+  status: CallStatus;
+  started_at?: string; // ISO time
+  summary?: string;
+  duration_s?: number; // not in the contract yet; shown only when present
+}
+
+/** The pre-alert and what became of it: thread state `handoff`, overlaid with the Store record. */
+export interface Handoff {
+  // "update": a later scan of a patient whose hand-off was accepted; the clinician
+  // was texted the change instead of a new pre-alert.
+  kind: "prealert" | "update";
+  to: string; // E.164 phone or iMessage handle; shown by its last four digits
+  sent_at?: string; // ISO time
+  delivered_at?: string; // ISO time, set by the bridge
+  no_reply_at?: string; // ISO time: the bridge saw no decision in time
+  channel?: "imessage";
+  status: HandoffStatus;
+  simulated: boolean;
+  reply: HandoffReply | null;
+  call: HandoffCall | null;
 }
 
 export interface ApprovalRequest {
@@ -161,6 +208,7 @@ export interface DashState {
   steps: AgentStep[];
   messages: ChatMessage[];
   approval: ApprovalRequest | null;
+  handoff?: Handoff | null; // live mode: the pre-alert once sent
   tab: TabId;
   tabPinnedByUser: boolean;
 }

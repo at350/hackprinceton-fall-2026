@@ -45,7 +45,7 @@ function Details({ node }: { node: TraceNode }) {
         <div className="flex items-center gap-2 text-[13px]">
           <span className="flex items-center gap-1.5 font-medium" style={{ color: s.color }}>
             {node.status === "running" && <Spinner size={12} />}
-            {s.label}
+            {node.statusLabel ?? s.label}
           </span>
           {node.startedAt !== null && <span className="text-muted">· started {formatClock(node.startedAt)}</span>}
           {dur && <span className="text-muted">· {dur}</span>}

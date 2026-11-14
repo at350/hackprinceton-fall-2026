@@ -6,10 +6,13 @@ import {
   IconAiChip,
   IconAtom,
   IconChart,
+  IconChat,
   IconCheck,
   IconDatabase,
   IconFullScreen,
+  IconHandshake,
   IconLayers,
+  IconPhone,
   IconRanking,
   IconRobot,
   IconSent,
@@ -33,23 +36,32 @@ interface Box {
   shape: Shape;
 }
 
+// Main row on a 160px pitch (64px between nodes, room for an item count), so
+// the hand-off columns after Send pre-alert cost as little zoom as they can.
 const L: Record<string, Box> = {
   device: { x: 0, y: 0, w: 96, h: 96, shape: "trigger" },
-  spots: { x: 176, y: 0, w: 96, h: 96, shape: "node" },
-  map: { x: 352, y: 0, w: 96, h: 96, shape: "node" },
-  agent: { x: 528, y: 0, w: 240, h: 96, shape: "agent" },
-  rank: { x: 864, y: 0, w: 96, h: 96, shape: "node" },
-  approval: { x: 1040, y: 0, w: 96, h: 96, shape: "node" },
-  alert: { x: 1216, y: 0, w: 96, h: 96, shape: "node" },
-  model: { x: 400, y: 208, w: 80, h: 80, shape: "circle" },
-  memory: { x: 544, y: 208, w: 80, h: 80, shape: "circle" },
-  "region-frontal": { x: 304, y: 384, w: 184, h: 64, shape: "pill" },
-  "region-temporal": { x: 512, y: 384, w: 184, h: 64, shape: "pill" },
-  "region-parietal": { x: 720, y: 384, w: 184, h: 64, shape: "pill" },
-  "region-occipital": { x: 928, y: 384, w: 184, h: 64, shape: "pill" },
-  forward_sim: { x: 576, y: 544, w: 80, h: 80, shape: "circle" },
-  fit_score: { x: 784, y: 544, w: 80, h: 80, shape: "circle" },
+  spots: { x: 160, y: 0, w: 96, h: 96, shape: "node" },
+  map: { x: 320, y: 0, w: 96, h: 96, shape: "node" },
+  agent: { x: 480, y: 0, w: 240, h: 96, shape: "agent" },
+  rank: { x: 784, y: 0, w: 96, h: 96, shape: "node" },
+  approval: { x: 944, y: 0, w: 96, h: 96, shape: "node" },
+  alert: { x: 1104, y: 0, w: 96, h: 96, shape: "node" },
+  // Live mode: the hand-off. Clinician reply has two outputs (n8n If): reply, and no reply into the call.
+  reply: { x: 1264, y: 0, w: 96, h: 96, shape: "node" },
+  call: { x: 1408, y: 176, w: 96, h: 96, shape: "node" },
+  decision: { x: 1552, y: 0, w: 96, h: 96, shape: "node" },
+  model: { x: 352, y: 208, w: 80, h: 80, shape: "circle" },
+  memory: { x: 496, y: 208, w: 80, h: 80, shape: "circle" },
+  "region-frontal": { x: 256, y: 384, w: 184, h: 64, shape: "pill" },
+  "region-temporal": { x: 464, y: 384, w: 184, h: 64, shape: "pill" },
+  "region-parietal": { x: 672, y: 384, w: 184, h: 64, shape: "pill" },
+  "region-occipital": { x: 880, y: 384, w: 184, h: 64, shape: "pill" },
+  forward_sim: { x: 528, y: 544, w: 80, h: 80, shape: "circle" },
+  fit_score: { x: 736, y: 544, w: 80, h: 80, shape: "circle" },
 };
+
+// Output handles of a node with two outputs, as offsets from its top.
+const PORT_Y = [32, 64];
 
 // The agent's labelled connectors along its bottom edge (n8n: Chat Model, Memory, Tool).
 const AGENT_PORTS = [
@@ -66,6 +78,9 @@ const ICON: Record<string, ComponentType<SVGProps<SVGSVGElement> & { size?: numb
   rank: IconRanking,
   approval: IconUserCheck,
   alert: IconSent,
+  reply: IconChat,
+  call: IconPhone,
+  decision: IconHandshake,
   model: IconAiChip,
   memory: IconDatabase,
   forward_sim: IconAtom,
@@ -73,7 +88,12 @@ const ICON: Record<string, ComponentType<SVGProps<SVGSVGElement> & { size?: numb
 };
 
 const CYAN = "#22c3e6";
-const BOUNDS = { x: -56, y: -24, w: 1424, h: 712 };
+
+/** The drawn area: the nodes present, plus room for labels. */
+function boundsOf(trace: Trace) {
+  const right = Math.max(...trace.nodes.map((n) => (L[n.id] ? L[n.id].x + L[n.id].w : 0)));
+  return { x: -56, y: -24, w: right + 112, h: 712 };
+}
 
 function portOf(nodeId: string): { x: number; y: number } {
   const a = L.agent;
@@ -118,16 +138,24 @@ function Edges({ trace }: { trace: Trace }) {
       {main.map((e) => {
         const a = L[e.from];
         const b = L[e.to];
+        if (!a || !b) return null;
         const x1 = a.x + a.w + 8;
-        const y = a.y + a.h / 2;
+        const y1 = a.y + (e.port === undefined ? a.h / 2 : PORT_Y[e.port]);
         const x2 = b.x - 6;
-        const items = byId[e.from]?.status === "success" || byId[e.from]?.status === "waiting" ? byId[e.from]?.items : null;
+        const y2 = b.y + b.h / 2;
+        const from = byId[e.from];
+        const items = e.items !== undefined ? e.items : from?.status === "success" || from?.status === "waiting" ? from?.items : null;
         const lit = !!items;
+        // Straight along a row; n8n's horizontal Bézier between rows.
+        const dx = Math.max(40, (x2 - x1) / 2);
+        const d = y1 === y2 ? `M ${x1} ${y1} L ${x2} ${y2}` : `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+        // Between rows the count sits under the lower end of the curve, clear of the node captions.
+        const mid = y1 === y2 ? { x: (x1 + x2) / 2, y: y1 - 14 } : y2 > y1 ? { x: x2 - 38, y: y2 + 18 } : { x: x1 + 38, y: y1 + 18 };
         return (
           <g key={`${e.from}-${e.to}`}>
-            <path d={`M ${x1} ${y} L ${x2} ${y}`} fill="none" stroke={lit ? CYAN : "rgba(255,255,255,0.32)"} strokeWidth={2} markerEnd="url(#arrow)" />
+            <path d={d} fill="none" stroke={lit ? CYAN : "rgba(255,255,255,0.32)"} strokeWidth={2} markerEnd="url(#arrow)" />
             {lit && (
-              <g transform={`translate(${(x1 + x2) / 2} ${y - 14})`}>
+              <g transform={`translate(${mid.x} ${mid.y})`}>
                 <rect x={-30} y={-10} width={60} height={18} rx={4} fill="rgba(20,22,27,0.85)" />
                 <text textAnchor="middle" y={3} fontSize={13} fill="#acb5c0">
                   {items} item{items === 1 ? "" : "s"}
@@ -157,7 +185,19 @@ function RunBorder({ box, slow }: { box: Box; slow: boolean }) {
   );
 }
 
-function NodeView({ node, selected, onSelect }: { node: TraceNode; selected: boolean; onSelect: () => void }) {
+/** Output handles per node, from the main edges leaving it: one in the middle, or one per labelled port. */
+function outputsOf(trace: Trace): Record<string, { y: number; label?: string }[]> {
+  const outs: Record<string, { y: number; label?: string }[]> = {};
+  for (const e of trace.edges) {
+    if (e.kind !== "main" || !L[e.from]) continue;
+    const list = (outs[e.from] ??= []);
+    const y = e.port === undefined ? L[e.from].h / 2 : PORT_Y[e.port];
+    if (!list.some((o) => o.y === y)) list.push({ y, label: e.label });
+  }
+  return outs;
+}
+
+function NodeView({ node, selected, onSelect, outs }: { node: TraceNode; selected: boolean; onSelect: () => void; outs: { y: number; label?: string }[] }) {
   const box = L[node.id];
   if (!box) return null;
   const Icon = ICON[node.id] ?? IconRobot;
@@ -211,9 +251,10 @@ function NodeView({ node, selected, onSelect }: { node: TraceNode; selected: boo
         {(box.shape === "node" || box.shape === "agent") && (
           <span className="absolute top-1/2 -left-[4px] h-4 w-[6px] -translate-y-1/2 rounded-[2px] bg-[#8a8f98]" />
         )}
-        {(box.shape === "node" || box.shape === "agent" || box.shape === "trigger") && node.id !== "alert" && (
-          <span className="absolute top-1/2 -right-[7px] size-3.5 -translate-y-1/2 rounded-full border border-[#8a8f98] bg-[#262a31]" />
-        )}
+        {(box.shape === "node" || box.shape === "agent" || box.shape === "trigger") &&
+          outs.map((o) => (
+            <span key={o.y} className="absolute -right-[7px] size-3.5 -translate-y-1/2 rounded-full border border-[#8a8f98] bg-[#262a31]" style={{ top: o.y }} />
+          ))}
         {/* Configuration nodes connect up through a diamond on top. */}
         {(box.shape === "circle" || box.shape === "pill") && (
           <span className="absolute -top-[5px] left-1/2 size-2.5 -translate-x-1/2 rotate-45 bg-[#8a8f98]" />
@@ -236,6 +277,15 @@ function NodeView({ node, selected, onSelect }: { node: TraceNode; selected: boo
           Tool
         </span>
       )}
+      {/* n8n If: each output's label beside its handle. */}
+      {outs.length > 1 &&
+        outs.map((o) =>
+          o.label ? (
+            <span key={o.y} className="absolute text-[11px] whitespace-nowrap text-muted" style={{ left: box.w + 12, top: o.y - (o.y < box.h / 2 ? 20 : -6) }}>
+              {o.label}
+            </span>
+          ) : null,
+        )}
 
       {!inline && (
         <div className="absolute left-1/2 flex w-[180px] -translate-x-1/2 flex-col items-center text-center" style={{ top: box.h + 10 }}>
@@ -251,14 +301,16 @@ export function TraceCanvas({ trace, selected, onSelect }: { trace: Trace; selec
   const host = useRef<HTMLDivElement>(null);
   const [view, setView] = useState({ x: 0, y: 0, k: 1 });
   const drag = useRef<{ x: number; y: number; vx: number; vy: number } | null>(null);
+  const { x: bx, y: by, w: bw, h: bh } = boundsOf(trace);
+  const outs = outputsOf(trace);
 
   const fit = useCallback(() => {
     const el = host.current;
     if (!el) return;
     const { width, height } = el.getBoundingClientRect();
-    const k = Math.min(1, (width - 48) / BOUNDS.w, (height - 96) / BOUNDS.h);
-    setView({ k, x: (width - BOUNDS.w * k) / 2 - BOUNDS.x * k, y: (height - 56 - BOUNDS.h * k) / 2 - BOUNDS.y * k });
-  }, []);
+    const k = Math.min(1, (width - 48) / bw, (height - 96) / bh);
+    setView({ k, x: (width - bw * k) / 2 - bx * k, y: (height - 56 - bh * k) / 2 - by * k });
+  }, [bx, by, bw, bh]);
 
   useEffect(() => {
     fit();
@@ -306,7 +358,7 @@ export function TraceCanvas({ trace, selected, onSelect }: { trace: Trace; selec
       <div className="absolute top-0 left-0 origin-top-left" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})` }}>
         <Edges trace={trace} />
         {trace.nodes.map((n) => (
-          <NodeView key={n.id} node={n} selected={n.id === selected} onSelect={() => onSelect(n.id)} />
+          <NodeView key={n.id} node={n} selected={n.id === selected} onSelect={() => onSelect(n.id)} outs={outs[n.id] ?? []} />
         ))}
       </div>
 

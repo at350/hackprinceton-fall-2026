@@ -3,10 +3,32 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { demo } from "@/lib/demo";
+import { type BadgeKey, type HandoffStep, type Tone, clockTime, handoffBadge, handoffSteps, lastFour } from "@/lib/handoff";
 import { LIVE } from "@/lib/live";
-import type { AgentStep, ChatMessage } from "@/lib/types";
+import type { AgentStep, CallEntry, ChatMessage, Handoff } from "@/lib/types";
 import { useDash } from "@/lib/useDash";
-import { IconArrowUp, IconCheck, IconChevronDown, IconTool, IconX } from "./icons";
+import {
+  IconAlert,
+  IconArrowUp,
+  IconChat,
+  IconCheck,
+  IconChecks,
+  IconChevronDown,
+  IconClock,
+  IconEye,
+  IconFlask,
+  IconInfo,
+  IconPhone,
+  IconPhoneOutgoing,
+  IconPhoneX,
+  IconQuestion,
+  IconSent,
+  IconTool,
+  IconUserCheck,
+  IconUserMinus,
+  IconX,
+  IconXCircle,
+} from "./icons";
 
 // Beautiful UI motion.
 const EASE_UI = [0.23, 1, 0.32, 1] as const;
@@ -196,8 +218,212 @@ function Status() {
   );
 }
 
+// ---- Hand-off (live mode) -------------------------------------------------
+
+const TONE: Record<Tone, string> = { text: "var(--text)", primary: "var(--primary)", warn: "var(--bleed-text)", muted: "var(--muted)" };
+
+const BADGE_ICON: Record<BadgeKey, typeof IconSent> = {
+  simulated: IconFlask,
+  sent: IconSent,
+  delivered: IconChecks,
+  read: IconEye,
+  failed: IconAlert,
+  no_one_on_call: IconUserMinus,
+  accepted: IconUserCheck,
+  declined: IconXCircle,
+  calling: IconPhoneOutgoing,
+  on_call: IconPhone,
+  no_answer: IconPhoneX,
+  call_failed: IconPhoneX,
+  no_reply: IconClock,
+};
+
+/** QualityBadge's pill: icon and label, coloured only when it matters. */
+function Badge({ icon: Icon, label, tone }: { icon: typeof IconSent; label: string; tone: Tone }) {
+  return (
+    <span
+      className="inline-flex h-[26px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-line px-2.5 text-[12px] font-medium"
+      style={{ color: TONE[tone] }}
+    >
+      <Icon size={13} />
+      {label}
+    </span>
+  );
+}
+
+function HandoffStepIcon({ state }: { state: HandoffStep["state"] }) {
+  if (state === "failed")
+    return (
+      <span className="grid size-[15px] shrink-0 place-items-center rounded-full bg-[rgba(255,148,121,0.16)] text-bleed-text">
+        <IconX size={9} strokeWidth={2.2} />
+      </span>
+    );
+  return <StepIcon step={{ id: "", kind: "todo", label: "", state }} />;
+}
+
+function handoffTitle(h: Handoff) {
+  if (h.status === "no_one_on_call") return { title: "Pre-alert not sent", sub: "Hand off by radio" };
+  const sent = clockTime(h.sent_at);
+  const what = h.kind === "update" ? "Update" : "Pre-alert";
+  return {
+    title: h.to ? `${what} to ${lastFour(h.to)}` : what,
+    sub: h.simulated ? "Simulated · no hospital link yet" : `iMessage${sent ? ` · sent ${sent}` : ""}`,
+  };
+}
+
+/**
+ * The pre-alert once it has gone out: a second row under the agent's, in the
+ * same shape. Collapsed it names the recipient and the furthest status; open it
+ * lists sent, delivered, the reply and the call, like the plan.
+ */
+function HandoffRow() {
+  const handoff = useDash((s) => s.handoff);
+  const [open, setOpen] = useState(false);
+  if (!handoff) return null;
+  const badge = handoffBadge(handoff);
+  const steps = handoffSteps(handoff);
+  const { title, sub } = handoffTitle(handoff);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, ease: EASE_UI }}
+      className="mx-3 mt-2 shrink-0 rounded-[12px] border border-[rgba(255,255,255,0.06)] bg-[rgba(0,0,0,0.18)]"
+    >
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        className="flex h-11 w-full items-center gap-2.5 rounded-[12px] px-3 text-left transition-colors duration-100 hover:bg-[rgba(255,255,255,0.03)]"
+      >
+        <IconChat size={16} className="shrink-0 text-primary" />
+        <span className="flex min-w-0 flex-col leading-tight">
+          <span className="truncate text-[13px] font-medium text-text">{title}</span>
+          <span className="truncate text-[12px] text-muted">{sub}</span>
+        </span>
+        <span className="ml-auto flex shrink-0 items-center gap-2">
+          <Badge icon={BADGE_ICON[badge.key]} label={badge.label} tone={badge.tone} />
+          <IconChevronDown
+            size={14}
+            className="text-muted transition-transform duration-300"
+            style={{ transform: open ? "rotate(180deg)" : "none" }}
+          />
+        </span>
+      </button>
+      <div
+        className="grid transition-[grid-template-rows,opacity] duration-[400ms]"
+        style={{ gridTemplateRows: open ? "1fr" : "0fr", opacity: open ? 1 : 0, transitionTimingFunction: "cubic-bezier(0.23,1,0.32,1)" }}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <ul className="border-t border-[rgba(255,255,255,0.06)] px-3 pt-1.5 pb-3">
+            {steps.map((step) => (
+              <li key={step.id} className={`flex h-7 items-center gap-2.5 text-[13px] ${step.state === "pending" ? "text-muted" : "text-text"}`}>
+                <HandoffStepIcon state={step.state} />
+                <span className="truncate">{step.label}</span>
+                {step.detail && (
+                  <span className="ml-auto shrink-0 rounded-[6px] bg-[rgba(255,255,255,0.06)] px-1.5 py-0.5 font-mono text-[11.5px] text-muted">
+                    {step.detail}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+// ---- Chat -----------------------------------------------------------------
+
+const ENTER = { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.3, ease: EASE_UI } };
+
+/** A text from the receiving clinician: a hairline bubble on the left, under who sent it. */
+function ClinicianMessage({ m }: { m: ChatMessage }) {
+  return (
+    <motion.div {...ENTER} className="flex flex-col items-start gap-1.5">
+      <p className="flex items-center gap-1.5 text-[12px] leading-none text-muted">
+        <IconChat size={13} />
+        Receiving clinician · iMessage
+      </p>
+      <p className="max-w-[85%] rounded-[14px] border border-[rgba(255,255,255,0.14)] px-3 py-2 text-[13.5px] leading-[1.5] text-text">{m.text}</p>
+    </motion.div>
+  );
+}
+
+/** A hand-off channel event is not a person: one muted line with an icon. */
+function ChannelEvent({ m }: { m: ChatMessage }) {
+  const Icon = /not answered|no answer/i.test(m.text)
+    ? IconPhoneX
+    : /call/i.test(m.text)
+      ? IconPhoneOutgoing
+      : /could not|not delivered|failed|nobody|no one/i.test(m.text)
+        ? IconAlert
+        : IconInfo;
+  return (
+    <motion.p {...ENTER} className="flex items-start gap-2 text-[13px] leading-[1.5] text-muted">
+      <Icon size={14} className="mt-[3px] shrink-0" />
+      {m.text}
+    </motion.p>
+  );
+}
+
+const CALL_DECISION: Record<CallEntry["decision"], { icon: typeof IconSent; label: string; tone: Tone }> = {
+  accept: { icon: IconUserCheck, label: "Accepted", tone: "primary" },
+  decline: { icon: IconXCircle, label: "Declined", tone: "warn" },
+  none: { icon: IconQuestion, label: "No decision", tone: "muted" },
+};
+
+/** A phone call with the clinician: decision and summary, the transcript folded. */
+function CallMessage({ m }: { m: ChatMessage }) {
+  const call = useDash((s) => s.handoff?.call);
+  const [open, setOpen] = useState(false);
+  const entry = m.call ?? { decision: "none" as const, summary: m.text, transcript: "" };
+  const decision = CALL_DECISION[entry.decision];
+  const summary = entry.summary || call?.summary || "";
+  const secs = call?.duration_s;
+  return (
+    <motion.div {...ENTER} className="max-w-[92%] rounded-[14px] border border-[rgba(255,255,255,0.14)] px-3 py-2.5">
+      <div className="flex items-center gap-2">
+        <IconPhone size={14} className="shrink-0" />
+        <span className="text-[13.5px] font-medium text-text">Phone call</span>
+        {secs ? <span className="font-mono text-[12px] text-muted">{`${Math.floor(secs / 60)}:${String(Math.round(secs % 60)).padStart(2, "0")}`}</span> : null}
+        <span className="ml-auto">
+          <Badge icon={decision.icon} label={decision.label} tone={decision.tone} />
+        </span>
+      </div>
+      {summary && <p className="mt-1.5 text-[13.5px] leading-[1.5] text-text">{summary}</p>}
+      {entry.transcript && (
+        <>
+          <button
+            type="button"
+            onClick={() => setOpen(!open)}
+            aria-expanded={open}
+            className="mt-2 flex items-center gap-1.5 text-[12.5px] font-medium text-muted transition-colors duration-100 hover:text-text"
+          >
+            Transcript
+            <IconChevronDown size={12} className="transition-transform duration-300" style={{ transform: open ? "rotate(180deg)" : "none" }} />
+          </button>
+          <div
+            className="grid transition-[grid-template-rows,opacity] duration-[400ms]"
+            style={{ gridTemplateRows: open ? "1fr" : "0fr", opacity: open ? 1 : 0, transitionTimingFunction: "cubic-bezier(0.23,1,0.32,1)" }}
+          >
+            <p className="min-h-0 overflow-hidden whitespace-pre-line text-[13px] leading-[1.5] text-[rgba(237,238,240,0.92)]">
+              <span className="block pt-2">{entry.transcript}</span>
+            </p>
+          </div>
+        </>
+      )}
+    </motion.div>
+  );
+}
+
 /** Streams word by word with a slim cursor. */
 function Message({ m }: { m: ChatMessage }) {
+  if (m.role === "clinician") return <ClinicianMessage m={m} />;
+  if (m.role === "event") return <ChannelEvent m={m} />;
+  if (m.role === "call") return <CallMessage m={m} />;
   const streaming = m.shown < m.text.length;
   let text = m.text;
   if (streaming) {
@@ -211,6 +437,16 @@ function Message({ m }: { m: ChatMessage }) {
       </motion.div>
     );
   }
+  if (m.relayed && !streaming)
+    return (
+      <motion.div {...ENTER} className="flex flex-col gap-1.5">
+        <p className="text-[13.5px] leading-[1.6] text-[rgba(237,238,240,0.92)]">{text}</p>
+        <p className="flex items-center gap-1.5 text-[12px] leading-none text-muted">
+          <IconChecks size={13} />
+          Sent to the clinician by iMessage
+        </p>
+      </motion.div>
+    );
   return (
     <motion.p
       initial={{ opacity: 0, y: 8 }}
@@ -318,6 +554,7 @@ export function AgentPanel() {
       className="surface raised flex min-h-0 flex-1 flex-col overflow-hidden"
     >
       <Status />
+      <HandoffRow />
       <div
         ref={scroller}
         onScroll={(e) => setClipped(e.currentTarget.scrollTop > 4)}

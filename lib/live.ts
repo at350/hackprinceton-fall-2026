@@ -1,4 +1,5 @@
 import { SAMPLE_RATE_HZ } from "./config";
+import { type Tagged, mergeHandoff, parseTagged, sameHandoff } from "./handoff";
 import { REGIONS, deviceBuffer, deviceSample, initialSpots } from "./mock";
 import type {
   AgentActivity,
@@ -64,12 +65,9 @@ interface Preview {
   map: number[][];
 }
 
-interface Handoff {
-  to: string;
-  message: string;
-  sent_at: string;
-  simulated: boolean;
-}
+// Thread state `handoff`: {to, message, report, sent_at, simulated, channel, status, reply}.
+// Read loosely; lib/handoff.ts merges it with the Store record.
+type HandoffState = Record<string, unknown>;
 
 type SimPatch = Partial<Simulation> & { id: string };
 
@@ -82,7 +80,7 @@ export interface LiveValues {
   sims?: SimPatch[];
   reading?: ScanReading | null;
   preview?: Preview | null;
-  handoff?: Handoff | null;
+  handoff?: HandoffState | null;
 }
 
 export type LiveEvent =
@@ -92,7 +90,7 @@ export type LiveEvent =
   | { type: "sims_reset"; sims: SimPatch[] }
   | { type: "sims"; sims: SimPatch[] }
   | { type: "preview"; preview: Preview | null }
-  | { type: "handoff"; handoff: Handoff | null };
+  | { type: "handoff"; handoff: HandoffState | null };
 
 export interface LiveSnapshot {
   values: LiveValues;
@@ -276,6 +274,14 @@ export class LiveStore {
   private interrupt: { key: string; count: number; skip: boolean } | null = null;
   private resolved = new Set<string>();
   private patchTimer: ReturnType<typeof setTimeout> | null = null;
+  // The hand-off: thread state `handoff`, and the Store record the bridge keeps current.
+  private handoffState: unknown = null;
+  private handoffRecord: unknown = null;
+  // A run this page did not start (the Photon bridge's) is streaming into the hook.
+  private external = false;
+  // `wire` came from a thread-state read rather than the hook (see syncState).
+  private polled = false;
+  private tags = new Map<string, Tagged | null>();
 
   subscribe = (fn: () => void) => {
     this.listeners.add(fn);
@@ -318,6 +324,10 @@ export class LiveStore {
     this.local = [];
     this.interrupt = null;
     this.resolved.clear();
+    this.handoffState = null;
+    this.handoffRecord = null;
+    this.external = false;
+    this.polled = false;
     this.runStart = performance.now();
     this.busy = true;
     this.streaming = false;
@@ -395,6 +405,9 @@ export class LiveStore {
   /** The stream's current state; called on every stream update. */
   sync(run: number, snap: LiveSnapshot) {
     if (run !== this.state.run) return;
+    // A thread-state read beats an idle hook that never heard of the bridge's run.
+    if (this.polled && !snap.isLoading && (snap.messages?.length ?? 0) < this.wire.messages.length) return;
+    this.polled = false;
     const v = snap.values ?? {};
     // Each field is applied only when the server sent a new copy of it.
     if (v.scan !== undefined && v.scan !== this.seen.scan) {
@@ -424,6 +437,8 @@ export class LiveStore {
     if (v.todos) this.applyTodos(v.todos);
     this.wire = { messages: snap.messages ?? [], isLoading: snap.isLoading };
     if (snap.isLoading) this.streaming = true;
+    // Loading while this page started nothing: the bridge's run, joined (see LiveBridge).
+    if (snap.isLoading && !this.busy) this.external = true;
 
     this.applyInterrupt(snap.isLoading ? null : snap.interrupt);
     if (snap.error && this.streaming && !snap.isLoading) this.fail(run, snap.error);
@@ -435,10 +450,41 @@ export class LiveStore {
       this.set({ device: "connected", scanEndedAt: this.state.scanEndedAt ?? this.state.t });
       this.rebuild();
       this.flushQueue();
+    } else if (this.external && !snap.isLoading) {
+      this.external = false;
+      this.streaming = false;
+      this.rebuild();
+      this.flushQueue();
     } else {
       this.rebuild();
     }
     this.emit();
+  }
+
+  /** Fallback for a run the bridge started that was missed or could not be joined: the thread's state, read directly. */
+  syncState(run: number, state: { values?: LiveValues | null; tasks?: { interrupts?: unknown[] }[] }) {
+    if (run !== this.state.run || this.busy || this.external) return;
+    const values = state.values ?? {};
+    const interrupts = (state.tasks ?? []).flatMap((t) => t.interrupts ?? []);
+    this.sync(run, { values, messages: values.messages ?? [], interrupt: interrupts.length ? interrupts : undefined, isLoading: false, error: undefined });
+    this.polled = true;
+  }
+
+  /** The hand-off's Store record, read by the bridge every 2 s once the pre-alert has gone out. */
+  setHandoffRecord(run: number, record: unknown) {
+    if (run !== this.state.run) return;
+    this.handoffRecord = record ?? null;
+    if (this.showHandoff()) this.emit();
+  }
+
+  /** Whether there is a hand-off to follow: the pre-alert has gone out on this run's thread. */
+  handoffOpen(run: number) {
+    return run === this.state.run && (this.handoffState !== null || this.handoffRecord !== null);
+  }
+
+  /** Whether this page's own run is idle, so a new run on the thread is someone else's. */
+  idle(run: number) {
+    return run === this.state.run && !this.busy && !this.external;
   }
 
   fail(run: number, err: unknown) {
@@ -466,7 +512,7 @@ export class LiveStore {
     if (!this.wire.messages.length || !this.bridge) {
       this.say(trimmed, "medic");
       this.say("No scan yet. Press Run scan to start.", "agent");
-    } else if (this.busy) {
+    } else if (this.busy || this.external) {
       this.say(trimmed, "medic", true); // sent when the agent is free
     } else {
       this.follow(trimmed);
@@ -550,8 +596,24 @@ export class LiveStore {
     this.set({ scan: { ...raw, map: old && sameGrid(old.map, map) ? old.map : map } });
   }
 
-  private applyHandoff(handoff: Handoff | null) {
-    if (handoff) this.timeline = { ...this.timeline, alertSent: true };
+  private applyHandoff(handoff: HandoffState | null) {
+    this.handoffState = handoff ?? null;
+    this.showHandoff();
+  }
+
+  /** Thread state overlaid with the Store record; true when what is shown changed. */
+  private showHandoff() {
+    const next = mergeHandoff(this.handoffState, this.handoffRecord);
+    if (next) this.timeline = { ...this.timeline, alertSent: true };
+    if (sameHandoff(next, this.state.handoff)) return false;
+    this.set({ handoff: next });
+    return true;
+  }
+
+  /** Tagged human messages parse once; the same object keeps the chat from repainting. */
+  private tag(text: string): Tagged | null {
+    if (!this.tags.has(text)) this.tags.set(text, parseTagged(text));
+    return this.tags.get(text)!;
   }
 
   private applyActivity(item: AgentActivity) {
@@ -645,12 +707,26 @@ export class LiveStore {
     const answered = new Set(tools.map((m) => m.tool_call_id!));
     // Calls that failed or that the medic rejected did not happen; they get no row.
     const dropped = new Set(tools.filter((m) => m.status === "error").map((m) => m.tool_call_id!));
+    // Human messages the medic did not type are tagged: the clinician's texts, a call, a channel event.
+    // The bridge texts the clinician Lucid's last answer of a run they started (not after a channel event).
+    let from: Tagged["role"] | "medic" = "medic";
+    let answer: ChatMessage | null = null;
+    const relay = () => {
+      if (answer && (from === "clinician" || from === "call")) answer.relayed = true;
+    };
     wire.forEach((m, i) => {
       flush(i);
       const id = m.id ?? `m-${i}`;
       if (m.type === "human") {
         const text = textOf(m.content);
-        if (text !== TRIGGER) chat.push({ id, role: "medic", text, shown: text.length });
+        if (text === TRIGGER) return;
+        relay();
+        answer = null;
+        const tag = this.tag(text);
+        from = tag?.role ?? "medic";
+        if (!tag) chat.push({ id, role: "medic", text, shown: text.length });
+        else if (tag.role === "call") chat.push({ id, role: "call", text: tag.text, shown: tag.text.length, call: tag.call });
+        else chat.push({ id, role: tag.role, text: tag.text, shown: tag.text.length });
       } else if (m.type === "ai") {
         const calls = m.tool_calls ?? [];
         // A result submitted without a spoken summary still deserves one in the chat.
@@ -658,9 +734,11 @@ export class LiveStore {
         const text = textOf(m.content).trim() || (typeof summary === "string" ? summary.trim() : "");
         if (!text) return;
         const writing = isLoading && i === wire.length - 1 && !calls.length;
-        chat.push({ id, role: "agent", text, shown: writing ? Math.max(0, text.length - 1) : text.length });
+        answer = { id, role: "agent", text, shown: writing ? Math.max(0, text.length - 1) : text.length };
+        chat.push(answer);
       }
     });
+    if (!isLoading) relay();
     flush(Infinity);
 
     // Plan: to-dos, with the lead's tool calls nested under them.
