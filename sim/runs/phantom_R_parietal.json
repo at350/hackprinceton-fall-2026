@@ -1,0 +1,14 @@
+{
+  "subject": "phantom, 100 ml balloon at R-parietal, seed 0",
+  "bleeds": [
+    "100 ml balloon at R-parietal"
+  ],
+  "bleed_sides": [
+    "R"
+  ],
+  "medium": "phantom",
+  "detector": "schottky",
+  "drive_dbm": 0.0,
+  "posture": "upright",
+  "seed": 0
+}
