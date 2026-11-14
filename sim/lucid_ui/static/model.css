@@ -1,0 +1,40 @@
+/* Model: the generated brain on the left, what shaped it on the right, previous heads below. */
+.model {
+  display: grid; gap: 1px; background: var(--line);
+  grid-template-columns: minmax(0, 1.6fr) minmax(320px, 1fr);
+  grid-template-areas: "stage panel" "gallery gallery";
+}
+.model > * { background: var(--ward); }
+.model-stage { grid-area: stage; position: relative; min-height: max(460px, min(72vh, 780px)); overflow: hidden; }
+#model-scene { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
+.model-phase {
+  position: absolute; left: var(--gutter); bottom: 16px; margin: 0; max-width: min(56ch, calc(100% - 2 * var(--gutter)));
+  padding: 8px 12px; border-radius: 6px; background: rgba(20, 33, 58, .8); border: 1px solid var(--line); color: var(--ink-2);
+  backdrop-filter: blur(6px);
+}
+.model-panel { grid-area: panel; display: flex; flex-direction: column; }
+.model-panel > section { padding: 16px var(--gutter); border-bottom: 1px solid var(--line); }
+.model-heart-head { display: flex; align-items: baseline; gap: 12px; }
+.model-heart .big { font-size: 48px; }
+.model-heart .big-unit { font-size: 13px; line-height: 1.35; }
+#pulse-trace { width: 100%; height: 64px; display: block; margin: 8px 0 2px; }
+.tissue { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.tissue th { text-align: left; color: var(--ink-3); font-weight: 500; padding: 4px 4px 6px; }
+.tissue td { padding: 5px 4px; border-top: 1px solid var(--line); vertical-align: middle; }
+.tissue td:first-child { color: var(--ink-2); }
+.tissue svg { display: block; width: 100%; height: 14px; }
+.tissue .muted { color: var(--ink-3); }
+.model-honest p { margin: 0; color: var(--ink-3); font-size: 12px; line-height: 1.5; }
+.model-honest b { color: var(--ink-2); font-weight: 600; }
+
+.model-gallery { grid-area: gallery; padding: 16px var(--gutter) 24px; }
+.model-gallery ol { list-style: none; margin: 10px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+.model-gallery li { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel); }
+.model-gallery img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+.model-gallery li p { margin: 0; padding: 7px 9px 8px; font-size: 12px; color: var(--ink-2); line-height: 1.35; }
+.model-gallery li p b { display: block; color: var(--ink); font-weight: 600; }
+
+@media (max-width: 1080px) {
+  .model { grid-template-columns: minmax(0, 1fr); grid-template-areas: "stage" "panel" "gallery"; }
+  .model-stage { min-height: max(380px, 60vh); }
+}

@@ -129,7 +129,10 @@ class Runner:
                   "pos": _round(s.direction * HEAD_RADIUS_MM, 2)} for s in DEFAULT_SPOTS]
         self.hub.publish("hello", {"label": label, "medium": medium, "speed": speed, "plan": [s.id for s in scan.plan],
                                    "spots": spots, "head_radius": HEAD_RADIUS_MM, "truth": truth,
-                                   "prevalence": scan.prevalence, "n_sims": scan.n_sims}, remember=True)
+                                   "prevalence": scan.prevalence, "n_sims": scan.n_sims,
+                                   # What normal tissue reads, for "this region reads higher/lower than usual".
+                                   "tissue_sigma": scan.prior.tissue_sigma, "region_sd": scan.prior.region_sd},
+                         remember=True)
         air = deque(maxlen=800)  # recent coil levels: the top of them is the probe in air
         batch, last_flush, t0 = [], 0.0, time.monotonic()
         for line in lines:
@@ -171,7 +174,7 @@ class Runner:
     def _payload(self, scan: LiveScan, u) -> dict:
         interp, loc = scan.interp, scan.location
         spots = interp.spots
-        keep = [c for c in ("spot", "side", "region", "status", "sigma", "sigma_se", "gap_mm", "note", "pulse_bpm")
+        keep = [c for c in ("spot", "side", "region", "status", "sigma", "sigma_se", "gap_mm", "od", "note", "pulse_bpm")
                 if c in spots]
         spot_rows = spots[spots["spot"].isin(u.done)][keep].replace({np.nan: None}).to_dict(orient="records")
         pairs = (interp.pairs[["region", "d_sigma", "d_sigma_se", "z"]].replace({np.nan: None}).to_dict(orient="records")
@@ -194,6 +197,7 @@ class Runner:
             "surprises": u.surprises, "location": u.location, "spots": spot_rows, "pairs": pairs,
             "predictions": u.predictions.replace({np.nan: None}).to_dict(orient="records") if len(u.predictions) else [],
             "flag": interp.flag if u.final else None,
+            "heart_rate_bpm": interp.flag.get("heart_rate_bpm"),
             "sims": {"bleed": np.asarray(sims.get("bleed", []), int).tolist(),
                      "points": _round(sims.get("points", np.zeros((0, 3))), 1),
                      "regions": sims.get("regions", []),

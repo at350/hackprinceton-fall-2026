@@ -12,6 +12,15 @@ def test_brain_fits_inside_the_skull():
     assert (abs(v).max(axis=0) < 78).all()
 
 
+def test_brain_has_smooth_stages_for_the_model_view():
+    from lucid_ui.make_brain import OUT
+
+    data = json.loads(OUT.read_text())
+    for side in ("left", "right"):
+        h = data[side]
+        assert len(h["inflated"]) == len(h["blob"]) == len(h["vertices"])
+
+
 def test_simulated_scan_streams_frames_and_updates():
     app = App({"kind": "sim"}, DEFAULT_DETECTOR)
     q = app.hub.subscribe()

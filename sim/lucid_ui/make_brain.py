@@ -17,6 +17,7 @@ import zlib
 from pathlib import Path
 
 import numpy as np
+from scipy import sparse
 
 from lucid_sim.anatomy import HEAD_RADIUS_MM
 
@@ -51,6 +52,23 @@ def read_gifti(path: Path) -> list[np.ndarray]:
     return arrays
 
 
+def smoothed(v: np.ndarray, f: np.ndarray, iterations: int) -> np.ndarray:
+    """Laplacian smoothing (each vertex moves to its neighbours' mean), rescaled back to the original size.
+    Few iterations flatten the folds; many give a smooth blob."""
+    n = len(v)
+    i = np.concatenate([f[:, 0], f[:, 1], f[:, 2], f[:, 1], f[:, 2], f[:, 0]])
+    j = np.concatenate([f[:, 1], f[:, 2], f[:, 0], f[:, 0], f[:, 1], f[:, 2]])
+    adj = sparse.coo_matrix((np.ones(len(i)), (i, j)), shape=(n, n)).tocsr()
+    adj.data[:] = 1.0
+    step = sparse.diags(1 / np.asarray(adj.sum(axis=1)).ravel()) @ adj
+    out = v.copy()
+    for _ in range(iterations):
+        out = 0.5 * out + 0.5 * (step @ out)
+    centre, centre0 = out.mean(axis=0), v.mean(axis=0)
+    scale = (v.max(axis=0) - v.min(axis=0)) / (out.max(axis=0) - out.min(axis=0))
+    return (out - centre) * scale + centre0
+
+
 def build(folder: Path) -> dict:
     hemis = {}
     for side in ("left", "right"):
@@ -72,7 +90,10 @@ def build(folder: Path) -> dict:
         v = v * shrink
         s = np.clip((s - np.percentile(s, 2)) / (np.percentile(s, 98) - np.percentile(s, 2)), 0, 1)
         out[side] = {"vertices": np.round(v, 1).ravel().tolist(), "faces": f.ravel().tolist(),
-                     "sulc": np.round(s, 2).tolist()}
+                     "sulc": np.round(s, 2).tolist(),
+                     # Stages for the generated-brain view: folds ironed out, then a smooth blob.
+                     "inflated": np.round(smoothed(v, f, 40), 1).ravel().tolist(),
+                     "blob": np.round(smoothed(v, f, 600), 1).ravel().tolist()}
     return out
 
 

@@ -21,6 +21,14 @@ As readings come in:
 - **Left against right.** One row per region: the 500 simulated heads' right − left difference as dots, the measured difference with 2 standard errors, and the ±3 standard-error lines. A table view is one click away.
 - **Live signals**: coil (dB below air), reflected near-infrared, and probe motion, with time on a spot shaded.
 
+**Model** (`/model.html`). The brain generated from this scan's signals:
+- It starts as a smooth, see-through average head. Each spot the probe reads folds the cortex near it into shape and makes it solid, so the brain builds up as the scan goes.
+- Each region swells or settles with its measured conductivity against a typical head (exaggerated about ten times). Hair strands grow with the measured hair and gap at each spot. Blood shows where the fit puts it.
+- The brain beats with the pulse in the near-infrared light, played back live, and the panel shows the heart rate and the trace.
+- A tissue table gives each region's left and right conductivity and hair. Every finished scan leaves a snapshot under "Previous heads" (the last six are kept), so different heads can be compared.
+
+Honest scope: conductivity, hair and gap, pulse and blood are measured. The folding pattern is the fsaverage template, smoothed in `make_brain.py` for the "average head" stages.
+
 **16 heads view** (`/ensemble.html`, the "16 heads" tab). Sixteen of the 500 simulated heads, each drawn as its own brain:
 - each starts as a faint point cloud, and every finished spot materialises the cortex that spot can see, on all sixteen, with a glowing front where it is forming and a shimmer under the probe;
 - each brain shows its own explanation of the readings: "No bleed", or where its bleed is, how deep and how big, painted on its cortex;
