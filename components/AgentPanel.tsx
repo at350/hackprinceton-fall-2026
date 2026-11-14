@@ -358,9 +358,11 @@ function ChannelEvent({ m }: { m: ChatMessage }) {
     ? IconPhoneX
     : /call/i.test(m.text)
       ? IconPhoneOutgoing
-      : /could not|not delivered|failed|nobody|no one/i.test(m.text)
-        ? IconAlert
-        : IconInfo;
+      : /no reply/i.test(m.text)
+        ? IconClock
+        : /could not|not delivered|failed|nobody|no one/i.test(m.text)
+          ? IconAlert
+          : IconInfo;
   return (
     <motion.p {...ENTER} className="flex items-start gap-2 text-[13px] leading-[1.5] text-muted">
       <Icon size={14} className="mt-[3px] shrink-0" />
