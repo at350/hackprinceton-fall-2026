@@ -126,6 +126,7 @@ function ChartRow({ label, unit, value, children }: { label: string; unit: strin
   );
 }
 
+const CYAN_HEX = "#22c3e6";
 const TILT_MAX = 40; // degrees at the rim
 const DIAL_R = 30;
 const TICKS = Array.from({ length: 36 }, (_, i) => i * 10);
@@ -144,20 +145,8 @@ function Tilt({ pitch, roll }: { pitch: number; roll: number }) {
   return (
     <div className="flex items-center gap-3.5">
       <svg width="52" height="52" viewBox="-34 -34 68 68" aria-hidden>
-        <defs>
-          <radialGradient id="dial-face" cx="0.5" cy="0.4" r="0.6">
-            <stop offset="0" stopColor="#2a3039" />
-            <stop offset="1" stopColor="#12161b" />
-          </radialGradient>
-          <radialGradient id="bubble" cx="0.35" cy="0.3" r="0.75">
-            <stop offset="0" stopColor="#d9f6fd" />
-            <stop offset="0.35" stopColor="#5fd6ef" />
-            <stop offset="1" stopColor="#127f99" />
-          </radialGradient>
-        </defs>
-        {/* Bezel and face */}
-        <circle r={DIAL_R + 3} fill="#0a0c10" stroke="rgba(255,255,255,0.12)" strokeWidth="0.75" />
-        <circle r={DIAL_R} fill="url(#dial-face)" />
+        {/* Flat dial: solid face, hairline rim. */}
+        <circle r={DIAL_R + 2} fill="#12151a" stroke="rgba(255,255,255,0.14)" strokeWidth="0.75" />
         {/* Ticks every 10°, majors on the axes */}
         {TICKS.map((a) => {
           const major = a % 90 === 0;
@@ -170,24 +159,24 @@ function Tilt({ pitch, roll }: { pitch: number; roll: number }) {
               y1={-Math.cos(t) * r1}
               x2={Math.sin(t) * (DIAL_R - 0.8)}
               y2={-Math.cos(t) * (DIAL_R - 0.8)}
-              stroke={major ? "rgba(237,238,240,0.95)" : "rgba(237,238,240,0.4)"}
+              stroke={major ? "rgba(237,238,240,0.9)" : "rgba(237,238,240,0.32)"}
               strokeWidth={major ? 1.2 : 0.7}
             />
           );
         })}
-        {/* 10° and 20° rings, crosshair */}
-        <circle r={ring(10)} fill="rgba(34,195,230,0.1)" stroke="rgba(255,255,255,0.28)" strokeWidth="0.6" />
-        <circle r={ring(20)} fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="0.6" strokeDasharray="1.2 1.6" />
-        <line x1={-DIAL_R + 6} x2={DIAL_R - 6} stroke="rgba(255,255,255,0.18)" strokeWidth="0.5" />
-        <line y1={-DIAL_R + 6} y2={DIAL_R - 6} stroke="rgba(255,255,255,0.18)" strokeWidth="0.5" />
-        {/* Bubble */}
-        <g style={{ transform: `translate(${bx}px, ${by}px)`, transition: "transform 160ms linear" }}>
-          <circle r="6.5" fill="rgba(34,195,230,0.2)" />
-          <circle r="4.6" fill="url(#bubble)" stroke="rgba(217,246,253,0.6)" strokeWidth="0.4" />
-          <circle cx="-1.4" cy="-1.5" r="1.1" fill="rgba(255,255,255,0.9)" />
+        {/* 10° and 20° rings, fixed crosshair */}
+        <circle r={ring(10)} fill="none" stroke="rgba(255,255,255,0.22)" strokeWidth="0.6" />
+        <circle r={ring(20)} fill="none" stroke="rgba(255,255,255,0.14)" strokeWidth="0.6" strokeDasharray="1.2 1.6" />
+        <line x1={-DIAL_R + 6} x2={DIAL_R - 6} stroke="rgba(255,255,255,0.14)" strokeWidth="0.5" />
+        <line y1={-DIAL_R + 6} y2={DIAL_R - 6} stroke="rgba(255,255,255,0.14)" strokeWidth="0.5" />
+        {/* Tilt marker: thin reticle, flat colour, no glow. */}
+        <g style={{ transform: `translate(${bx}px, ${by}px)`, transition: "transform 160ms linear" }} stroke={CYAN_HEX} strokeWidth="1.2" fill="none">
+          <circle r="3.6" />
+          <line x1="-7.5" x2="-5" />
+          <line x1="5" x2="7.5" />
+          <line y1="-7.5" y2="-5" />
+          <line y1="5" y2="7.5" />
         </g>
-        {/* Glass rim highlight */}
-        <path d={`M ${-DIAL_R * 0.8} ${-DIAL_R * 0.55} A ${DIAL_R} ${DIAL_R} 0 0 1 ${DIAL_R * 0.55} ${-DIAL_R * 0.8}`} fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="0.8" strokeLinecap="round" />
       </svg>
       <div className="flex flex-col gap-1 whitespace-nowrap text-[13px] leading-none text-muted">
         <span className="flex justify-between gap-3">
