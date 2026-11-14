@@ -67,6 +67,9 @@ body {
     radial-gradient(44% 46% at 98% 94%, rgba(34, 150, 200, 0.46), transparent 70%),
     radial-gradient(60% 40% at 100% 0%, rgba(34, 195, 230, 0.14), transparent 70%),
     #07090c;
+  /* Without this the glow tiles into the 1px border and shows as a line on top. */
+  background-repeat: no-repeat;
+  background-origin: border-box;
 }
 .frame::before {
   content: "";
