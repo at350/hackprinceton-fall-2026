@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "motion/react";
-import { DEMO_LENGTH_MS, PATIENT_ID } from "@/lib/config";
+import { DEMO_LENGTH_MS } from "@/lib/config";
 import { demo } from "@/lib/demo";
 import type { DeviceStatus } from "@/lib/types";
 import { formatClock, useDash } from "@/lib/useDash";
@@ -85,7 +85,6 @@ export function Header() {
         <span className="h-5 w-px bg-line" />
         <DeviceStatusChip />
         <div className="ml-auto flex items-center gap-5">
-          <span className="text-[14px] text-muted">{PATIENT_ID}</span>
           <Elapsed />
           <span className="h-5 w-px bg-line" />
           <span className="text-[13px] text-muted">

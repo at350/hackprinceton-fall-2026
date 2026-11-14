@@ -40,7 +40,7 @@ Dev aid: in the browser console, `__demo.seek(60000)` jumps the story to 1:00.
 app/                 Next.js App Router entry, fonts, global styles
 components/
   Dashboard.tsx      frame + layout (sketch: big tabbed panel left, two panels right)
-  Header.tsx         floating nav pill, device status, patient, scan time, demo controls
+  Header.tsx         floating nav pill, device status, scan time, demo controls
   LeftPanel.tsx      folder tabs: Scan / Simulations
   ScanTab.tsx        verdict, spot progress, stat cards
   BrainView.tsx      brain render + heatmap canvas + scan-spot markers
