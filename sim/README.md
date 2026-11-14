@@ -21,6 +21,11 @@ As readings come in:
 - **Left against right.** One row per region: the 500 simulated heads' right − left difference as dots, the measured difference with 2 standard errors, and the ±3 standard-error lines. A table view is one click away.
 - **Live signals**: coil (dB below air), reflected near-infrared, and probe motion, with time on a spot shaded.
 
+**16 heads view** (`/ensemble.html`, the "16 heads" tab). Sixteen of the 500 simulated heads, each drawn as its own brain:
+- each starts as a faint point cloud, and every finished spot materialises the cortex that spot can see, on all sixteen, with a glowing front where it is forming and a shimmer under the probe;
+- each brain shows its own explanation of the readings: "No bleed", or where its bleed is, how deep and how big, painted on its cortex;
+- when the scan ends (or on "Merge now"), the sixteen fly together, overlap as ghosts and resolve into one brain carrying the merged chance-of-blood map from all 500 heads. The merged map is that average, so the picture is the real computation.
+
 Standard library server with Server-Sent Events, three.js 0.160 vendored in `lucid_ui/static/vendor` (MIT), so it runs offline. Fonts come from Google Fonts and fall back to system fonts. `lucid_ui/make_brain.py` rebuilds `static/brain.json` from nilearn's fsaverage5 files.
 
 ## TODO (hardware, blocks calibration)

@@ -36,6 +36,7 @@ from .make_brain import OUT as BRAIN_PATH
 from .make_brain import load as load_brain
 
 STATIC = Path(__file__).parent / "static"
+N_TILES = 16  # simulated heads drawn one by one in the ensemble view
 
 SCENARIOS = {
     "subdural": ("30 ml subdural, left temporal", ls.HUMAN, [ls.Bleed("L-temporal", 30, "subdural")]),
@@ -45,6 +46,21 @@ SCENARIOS = {
     "phantom": ("Saline phantom, 100 ml balloon, right parietal", ls.SALINE_PHANTOM,
                 [ls.Bleed("R-parietal", 100, "balloon")]),
 }
+
+
+def _clean(obj):
+    """JSON has no NaN or infinity: send them as null."""
+    if isinstance(obj, float) or isinstance(obj, np.floating):
+        return float(obj) if np.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: _clean(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_clean(v) for v in obj]
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, np.bool_):
+        return bool(obj)
+    return obj
 
 
 def _round(x, nd=3):
@@ -60,7 +76,7 @@ class Hub:
         self.lock = threading.Lock()
 
     def publish(self, event: str, data: dict, remember: bool = False):
-        msg = f"event: {event}\ndata: {json.dumps(data, separators=(',', ':'), default=float)}\n\n"
+        msg = f"event: {event}\ndata: {json.dumps(_clean(data), separators=(',', ':'), allow_nan=False)}\n\n"
         with self.lock:
             if remember:
                 self.last[event] = msg
@@ -87,6 +103,9 @@ class Runner:
         self.hub = hub
         self.detector = detector
         self.brain = load_brain(BRAIN_PATH)
+        r = np.linalg.norm(self.brain, axis=1)
+        self.brain_dir = self.brain / r[:, None]
+        self.brain_depth = HEAD_RADIUS_MM - r
         self.thread: threading.Thread | None = None
         self.stop = threading.Event()
         self.scan: LiveScan | None = None
@@ -180,7 +199,42 @@ class Runner:
             "voxels": loc.cloud_records(1800) if loc is not None else [],
             "cortex": base64.b64encode(cortex.tobytes()).decode(),
             "status": scan.status(),
+            "tiles": self._tiles(scan),
         }
+
+    def _tiles(self, scan: LiveScan) -> list[dict]:
+        """The first 16 simulated heads, each painted on its own cortex: where its bleed would be, if any."""
+        sims, prior = scan.sims, scan.prior
+        if not sims:
+            return []
+        bleed = np.asarray(sims["bleed"], bool)
+        order = np.cumsum(bleed) - 1  # each bleed head's row in points/spread/contrast
+        tiles = []
+        for i in range(min(N_TILES, len(bleed))):
+            if not bleed[i]:
+                tiles.append({"bleed": False, "label": "No bleed", "cortex": ""})
+                continue
+            k = order[i]
+            point, spread, contrast = sims["points"][k], sims["spread"][k], sims["contrast"][k]
+            frac = min(contrast / prior.max_contrast, 1 - 1e-9)
+            thick = min(-prior.thick_sat_mm * np.log1p(-frac), prior.max_thick_mm)
+            lateral = max(spread, thick / 2)
+            depth = HEAD_RADIUS_MM - np.linalg.norm(point)
+            u = point / max(np.linalg.norm(point), 1e-9)
+            along = np.arccos(np.clip(self.brain_dir @ u, -1, 1)) * HEAD_RADIUS_MM
+            lat_out = np.maximum(along - lateral, 0)
+            dep_out = np.maximum(np.maximum(depth - self.brain_depth, self.brain_depth - depth - thick), 0)
+            heat = np.exp(-(np.hypot(lat_out, dep_out) / 8.0) ** 2)
+            side, region = _nearest(u)
+            tiles.append({"bleed": True, "cortex": base64.b64encode((heat * 255).astype(np.uint8).tobytes()).decode(),
+                          "label": f"{'Left' if side == 'L' else 'Right'} {region}, {depth:.0f} mm deep, "
+                                   f"{np.pi * lateral**2 * thick / 1000:.0f} ml"})
+        return tiles
+
+
+def _nearest(u: np.ndarray) -> tuple[str, str]:
+    best = max(DEFAULT_SPOTS, key=lambda s: s.direction @ u)
+    return best.side, best.region
 
 
 def sim_source(key: str, seed: int, artifacts: float):

@@ -44,6 +44,7 @@ export class HeadScene {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color('#0d1626');
     this.camera = new THREE.PerspectiveCamera(32, 1, 1, 3000);
     this.camera.up.set(0, 0, 1);
     this.camera.position.set(-330, 300, 170);

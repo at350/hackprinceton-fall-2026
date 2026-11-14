@@ -38,6 +38,10 @@ button, select, input { font: inherit; color: inherit; }
 }
 .brand { display: flex; align-items: center; gap: 10px; font: 600 20px/1 var(--ui); letter-spacing: 0.02em; }
 .brand-mark { width: 28px; height: 28px; color: var(--ink-2); }
+.views { display: flex; gap: 2px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 2px; }
+.views a { color: var(--ink-2); text-decoration: none; padding: 5px 12px; border-radius: 6px; font-size: 13px; }
+.views a:hover { color: var(--ink); }
+.views a[aria-current="page"] { background: var(--panel-2); color: var(--ink); }
 .scan-label { margin: 0; color: var(--ink-2); flex: 1; min-width: 180px; }
 .controls { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
 .field { display: grid; gap: 3px; }

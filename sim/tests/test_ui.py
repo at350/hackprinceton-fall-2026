@@ -29,6 +29,19 @@ def test_simulated_scan_streams_frames_and_updates():
     assert final["final"] and final["p_bleed"] > 0.9 and final["location"]["side"] == "L"
     assert len(final["sims"]["bleed"]) == 500 and len(final["sims"]["pair_d"]) == 5
     assert len(base64.b64decode(final["cortex"])) == 20484 and final["voxels"]
+    tiles = final["tiles"]
+    assert len(tiles) == 16 and all(t["bleed"] == bool(b) for t, b in zip(tiles, final["sims"]["bleed"]))
+    assert all(len(base64.b64decode(t["cortex"])) == 20484 for t in tiles if t["bleed"])
+
+
+def test_events_are_strict_json():
+    from lucid_ui.server import Hub
+
+    hub = Hub()
+    q = hub.subscribe()
+    hub.publish("update", {"flag": {"heart_rate_bpm": float("nan")}, "x": [1.0, float("inf")]})
+    data = json.loads(q.get().split("data: ", 1)[1])
+    assert data == {"flag": {"heart_rate_bpm": None}, "x": [1.0, None]}
 
 
 def test_every_scenario_builds():

@@ -1,9 +1,9 @@
 // Wires the server's event stream to the head, the charts and the scan panels.
 import { HeadScene } from './scene.js';
 import { ChanceChart, Ladder, Strip, tooltip } from './charts.js';
+import { setupControls, pct } from './controls.js';
 
 const $ = (id) => document.getElementById(id);
-const pct = (p) => (p >= 0.995 ? '>99%' : p < 0.005 ? '<1%' : `${Math.round(p * 100)}%`);
 const spotName = (id) => (id ? id.replace('-', ' ') : '');
 
 const scene = new HeadScene($('scene'), $('labels'));
@@ -22,22 +22,7 @@ const strips = {
 
 let state = { plan: [], done: [], retake: [], confirm: [], pairs: {}, status: null, final: false, focused: false };
 
-// Controls
-
-fetch('/api/scenarios').then((r) => r.json()).then(({ source, scenarios }) => {
-  const select = $('scenario');
-  for (const [key, label] of Object.entries(scenarios)) select.add(new Option(label, key));
-  if (source.kind !== 'sim') {
-    $('scenario-field').hidden = true;
-    $('start').textContent = source.kind === 'serial' ? 'Start reading the probe' : 'Play recording';
-  }
-});
-$('controls').addEventListener('submit', (e) => {
-  e.preventDefault();
-  const q = new URLSearchParams({ scenario: $('scenario').value, speed: $('speed').value, seed: Math.floor(Math.random() * 1000) });
-  fetch(`/api/start?${q}`);
-  $('start').textContent = 'Restart scan';
-});
+setupControls();
 $('truth').addEventListener('change', (e) => scene.showTruth(e.target.checked));
 $('ladder-table-toggle').addEventListener('click', (e) => {
   const table = $('ladder-table');
