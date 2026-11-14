@@ -99,7 +99,7 @@ function ToolRow({ step }: { step: AgentStep }) {
 
 /** Beautiful UI "thinking" disclosure: plan with tool calls nested under each to-do. */
 function Trace({ steps }: { steps: AgentStep[] }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const todos = steps.filter((s) => s.kind === "todo");
   const done = todos.filter((s) => s.state === "done").length;
   const tools = steps.filter((s) => s.kind === "tool");
@@ -120,9 +120,10 @@ function Trace({ steps }: { steps: AgentStep[] }) {
         onClick={() => setOpen(!open)}
         className="flex h-9 w-full items-center gap-2 rounded-[12px] px-3 text-[13px] text-text transition-colors duration-100 hover:bg-[rgba(255,255,255,0.03)]"
       >
-        <span className="font-medium">Plan</span>
-        <span className="text-muted">
-          {done} of {todos.length} · {tools.length} tool calls
+        <StepIcon step={active ?? todos[0]} />
+        <span className="truncate font-medium">{(todos.find((s) => s.state === "running") ?? active ?? todos[0]).label}</span>
+        <span className="shrink-0 text-muted">
+          {done}/{todos.length}
         </span>
         <svg
           width="12"
@@ -286,7 +287,14 @@ export function AgentPanel() {
     >
       <StatusLine />
       <Trace steps={steps} />
-      <div ref={scroller} className="scroll-thin flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-4 py-3">
+      <div
+        ref={scroller}
+        className="scroll-thin mt-1 flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-4 pt-4 pb-3"
+        style={{
+          maskImage: "linear-gradient(to bottom, transparent 0, black 28px)",
+          WebkitMaskImage: "linear-gradient(to bottom, transparent 0, black 28px)",
+        }}
+      >
         {messages.map((m) => (
           <Message key={m.id} m={m} />
         ))}
