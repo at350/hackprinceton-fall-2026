@@ -157,6 +157,27 @@ export function Spinner({ size = 14 }: { size?: number }) {
   );
 }
 
+/** Determinate ring: arc fills clockwise from 12 o'clock. */
+export function Ring({ progress, size = 13 }: { progress: number; size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" className="-rotate-90" aria-hidden>
+      <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeOpacity=".22" strokeWidth="1.8" />
+      <circle
+        cx="8"
+        cy="8"
+        r="6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        pathLength={1}
+        strokeDasharray="1 1"
+        strokeDashoffset={1 - Math.max(0.04, progress)}
+      />
+    </svg>
+  );
+}
+
 export function Wave({ className = "", height = 12 }: { className?: string; height?: number }) {
   return (
     <span className={`wave inline-flex items-center gap-[2px] ${className}`} style={{ height }} aria-hidden>

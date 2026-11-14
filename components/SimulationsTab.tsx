@@ -1,117 +1,138 @@
 "use client";
 
 import { motion } from "motion/react";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { drawDimBrain, loadBrain, renderScanned } from "@/lib/brain";
 import { HEAD } from "@/lib/mock";
 import type { RegionAgent, Simulation } from "@/lib/types";
 import { useDash } from "@/lib/useDash";
-import { IconCheck, IconClock, IconTarget, Wave } from "./icons";
-import { EASE_EXPO, paintGrid } from "./ui";
+import { IconCheck, IconClock, IconTarget, Ring, Spinner } from "./icons";
+import { EASE_EXPO } from "./ui";
 
 const TYPE_LABEL = { epidural: "Epidural", subdural: "Subdural", intraparenchymal: "Intraparenchymal" };
+const EASE_UI = [0.23, 1, 0.32, 1] as const;
 
-function AgentProgress({ a }: { a: RegionAgent }) {
-  const state =
-    a.state === "done"
-      ? { text: "Done", el: <IconCheck size={13} strokeWidth={1.7} />, color: "var(--text)" }
-      : a.state === "running"
-        ? { text: "Running", el: <Wave height={10} />, color: "var(--primary)" }
-        : { text: "Idle", el: <IconClock size={13} strokeWidth={1.7} />, color: "var(--muted)" };
+/** Beautiful UI task row: 44px capsule, icon left, count and status right. */
+function AgentRow({ a }: { a: RegionAgent }) {
+  const done = a.state === "done";
   return (
-    <div className="flex flex-col gap-2.5 rounded-[12px] border border-line bg-raised px-3.5 py-3">
-      <div className="flex items-center justify-between">
-        <span className="text-[14px] font-medium capitalize text-text">{a.region}</span>
-        <span className="flex items-center gap-1.5 text-[12px] font-medium" style={{ color: state.color }}>
-          {state.el}
-          {state.text}
-        </span>
-      </div>
-      <div className="flex items-center gap-2">
-        <div className="flex flex-1 gap-[3px]">
-          {Array.from({ length: a.total }, (_, i) => (
-            <span
-              key={i}
-              className="h-1 flex-1 rounded-full transition-colors duration-500"
-              style={{ background: i < a.done ? "var(--text)" : "rgba(255,255,255,0.1)" }}
-            />
-          ))}
-        </div>
-        <span className="w-7 text-right text-[12px] text-muted">
-          {a.done}/{a.total}
-        </span>
-      </div>
+    <div className="glass flex h-11 items-center gap-2.5 rounded-[22px] pr-2 pl-3">
+      <span className={`grid size-5 place-items-center ${a.state === "running" ? "text-primary" : "text-muted"}`}>
+        {done ? (
+          <span className="grid size-[18px] place-items-center rounded-full bg-text text-bg">
+            <IconCheck size={11} strokeWidth={2.4} />
+          </span>
+        ) : a.state === "running" ? (
+          <Ring progress={a.done / a.total} size={18} />
+        ) : (
+          <IconClock size={16} />
+        )}
+      </span>
+      <span className="truncate text-[13.5px] font-medium capitalize text-text">{a.region}</span>
+      <span
+        className={`ml-auto shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[12px] font-medium transition-colors duration-300 ${
+          done ? "bg-[rgba(255,255,255,0.12)] text-text" : a.state === "running" ? "text-primary" : "text-muted"
+        }`}
+      >
+        {done ? (
+          "Done"
+        ) : a.state === "running" ? (
+          <>
+            <span className="hidden min-[1360px]:inline">Running </span>
+            {a.done}/{a.total}
+          </>
+        ) : (
+          "Idle"
+        )}
+      </span>
     </div>
   );
 }
 
-/** Small head map. Running sims draw in behind a sweeping line. */
+/** The brain render with this hypothesis's heat. */
 function Thumb({ sim }: { sim: Simulation }) {
-  const ref = useRef<HTMLCanvasElement>(null);
+  const base = useRef<HTMLCanvasElement>(null);
+  const top = useRef<HTMLCanvasElement>(null);
+  const [loaded, setLoaded] = useState(false);
   useEffect(() => {
-    if (ref.current) paintGrid(ref.current, sim.map);
-  }, [sim.map]);
-  const reveal = sim.status === "done" ? 1 : sim.status === "running" ? sim.progress : 0;
+    loadBrain().then(() => setLoaded(true));
+  }, []);
+  useEffect(() => {
+    if (!loaded) return;
+    const size = Math.round(base.current!.clientWidth * devicePixelRatio);
+    for (const c of [base.current!, top.current!]) c.width = c.height = size;
+    drawDimBrain(base.current!.getContext("2d")!, size, 0.3);
+    top.current!.getContext("2d")!.drawImage(renderScanned(sim.map, size, false), 0, 0);
+  }, [loaded, sim.map]);
+
+  const opacity = sim.status === "done" ? 1 : sim.status === "running" ? 0.15 + 0.85 * sim.progress : 0;
   return (
-    <div className="relative aspect-square w-[72px] shrink-0">
-      <svg viewBox="-1.1 -1.1 2.2 2.2" className="absolute inset-0 size-full" aria-hidden>
-        <ellipse rx={HEAD.rx * 1.03} ry={HEAD.ry * 1.03} fill="rgba(255,255,255,0.02)" stroke="var(--line-strong)" strokeWidth={0.03} />
-      </svg>
-      <div className="absolute overflow-hidden" style={{ inset: "4.5%", clipPath: `inset(0 0 ${(1 - reveal) * 100}% 0)` }}>
-        <canvas ref={ref} className="size-full" style={{ imageRendering: "auto" }} />
-      </div>
+    <div className="relative aspect-square w-[clamp(56px,5.2vw,76px)] shrink-0">
+      <canvas ref={base} className="absolute inset-0 size-full" />
+      <canvas ref={top} className="absolute inset-0 size-full" style={{ opacity, transition: "opacity 300ms linear" }} />
       {sim.status === "running" && (
-        <span className="absolute inset-x-[10%] h-px bg-primary" style={{ top: `${4.5 + reveal * 91}%` }} />
+        // Progress traced around the brain outline, starting at the front.
+        <svg viewBox="-1.1 -1.1 2.2 2.2" className="absolute inset-0 size-full -rotate-90" aria-hidden>
+          <ellipse rx={HEAD.ry * 1.06} ry={HEAD.rx * 1.06} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={0.035} />
+          <ellipse
+            rx={HEAD.ry * 1.06}
+            ry={HEAD.rx * 1.06}
+            fill="none"
+            stroke="var(--primary)"
+            strokeWidth={0.035}
+            strokeLinecap="round"
+            pathLength={1}
+            strokeDasharray="1 1"
+            strokeDashoffset={1 - sim.progress}
+          />
+        </svg>
       )}
     </div>
   );
 }
 
 function SimCard({ sim, best }: { sim: Simulation; best: boolean }) {
-  const status =
-    sim.status === "done"
+  const status = best
+    ? { text: "Best fit", el: <IconTarget size={13} />, color: "var(--primary)" }
+    : sim.status === "done"
       ? { text: "Done", el: <IconCheck size={12} strokeWidth={1.8} />, color: "var(--muted)" }
       : sim.status === "running"
-        ? { text: "Running", el: <Wave height={9} />, color: "var(--primary)" }
+        ? { text: `Running ${Math.round(sim.progress * 100)}%`, el: <Spinner size={12} />, color: "var(--primary)" }
         : { text: "Queued", el: <IconClock size={12} strokeWidth={1.8} />, color: "var(--muted)" };
   return (
     <motion.li
-      layout
-      transition={{ layout: { duration: 0.6, ease: EASE_EXPO } }}
-      className={`relative flex flex-col gap-3 rounded-[12px] border p-3 transition-colors duration-300 ${
-        best ? "border-primary bg-[rgba(34,195,230,0.05)]" : "border-line bg-raised"
-      } ${sim.status === "queued" ? "opacity-55" : ""}`}
+      layout="position"
+      transition={{ layout: { duration: 0.5, ease: EASE_UI } }}
+      className={`glass flex flex-col gap-3 p-3 transition-[border-color,opacity] duration-300 ${best ? "!border-primary" : "dim"} ${
+        sim.status === "queued" ? "opacity-60" : ""
+      }`}
     >
       <div className="flex items-start gap-3">
         <Thumb sim={sim} />
         <div className="flex min-w-0 flex-1 flex-col gap-1.5 pt-0.5">
-          {best ? (
-            <span className="flex items-center gap-1.5 text-[12px] font-medium text-primary">
-              <IconTarget size={13} />
-              Best fit
-            </span>
-          ) : (
-            <span className="flex items-center gap-1.5 text-[12px] font-medium" style={{ color: status.color }}>
-              {status.el}
-              {status.text}
-            </span>
-          )}
+          <span className="flex items-center gap-1.5 whitespace-nowrap text-[12px] font-medium" style={{ color: status.color }}>
+            {status.el}
+            {status.text}
+          </span>
           <span className="truncate text-[14px] font-medium leading-tight text-text">{TYPE_LABEL[sim.type]}</span>
-          <span className="text-[12px] leading-tight text-muted">
+          <span className="truncate text-[12.5px] leading-tight text-muted">
             {sim.region} · {sim.volume_ml} mL
           </span>
         </div>
       </div>
-      <div className="flex items-end justify-between gap-3">
-        <span className="label">Fit</span>
-        <span className="num-xl text-[22px] text-text">{sim.status === "done" ? sim.score.toFixed(2) : "--"}</span>
-      </div>
-      <div className="h-[3px] overflow-hidden rounded-full bg-[rgba(255,255,255,0.08)]">
-        <motion.div
-          className="h-full rounded-full"
-          style={{ background: best ? "var(--primary)" : "var(--text)" }}
-          animate={{ width: sim.status === "done" ? `${sim.score * 100}%` : "0%" }}
-          transition={{ duration: 0.8, ease: EASE_EXPO }}
-        />
+      <div className="flex items-center gap-3">
+        <div className="h-[3px] flex-1 overflow-hidden rounded-full bg-[rgba(255,255,255,0.08)]">
+          <motion.div
+            className="h-full rounded-full"
+            style={{ background: best ? "var(--primary)" : "var(--text)" }}
+            initial={{ width: 0 }}
+            animate={{ width: sim.status === "done" ? `${sim.score * 100}%` : "0%" }}
+            transition={{ duration: 0.8, ease: EASE_EXPO }}
+          />
+        </div>
+        <span className="w-12 text-right text-[22px] font-medium leading-none tracking-[-0.04em] text-text" title="Fit score">
+          {sim.status === "done" ? sim.score.toFixed(2) : "--"}
+        </span>
       </div>
     </motion.li>
   );
@@ -133,19 +154,15 @@ export function SimulationsTab() {
     return { ordered: best ? [best, ...rest] : rest, bestId: best?.id ?? null };
   }, [sims]);
 
-  const doneCount = sims.filter((s) => s.status === "done").length;
-
   return (
     <div className="flex h-full flex-col">
-      <div className="flex shrink-0 flex-col gap-3 px-5 pt-4">
-        <div className="grid grid-cols-4 gap-3">
-          {agents.map((a) => (
-            <AgentProgress key={a.region} a={a} />
-          ))}
-        </div>
+      <div className="grid shrink-0 grid-cols-4 gap-2.5 px-5 pt-5">
+        {agents.map((a) => (
+          <AgentRow key={a.region} a={a} />
+        ))}
       </div>
       <div className="scroll-thin mt-4 min-h-0 flex-1 overflow-y-auto px-5 pb-5">
-        <ul className="grid grid-cols-4 gap-3">
+        <ul className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2.5">
           {ordered.map((s) => (
             <SimCard key={s.id} sim={s} best={s.id === bestId} />
           ))}
