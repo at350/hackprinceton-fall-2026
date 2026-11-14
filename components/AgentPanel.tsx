@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { demo } from "@/lib/demo";
 import type { AgentStep, ChatMessage } from "@/lib/types";
 import { useDash } from "@/lib/useDash";
-import { IconArrowUp, IconCheck, IconChevronDown, IconTool, IconX, Spinner } from "./icons";
+import { IconArrowUp, IconCheck, IconChevronDown, IconTool, IconX } from "./icons";
 
 // Beautiful UI motion.
 const EASE_UI = [0.23, 1, 0.32, 1] as const;
@@ -48,39 +48,14 @@ function DotGrid({ mode }: { mode: "working" | "waiting" | "idle" }) {
   );
 }
 
-function StatusLine() {
-  const steps = useDash((s) => s.steps);
-  const streaming = useDash((s) => s.messages.some((m) => m.shown < m.text.length));
-  const waiting = useDash((s) => s.approval?.state === "pending");
-  const t = useDash((s) => Math.floor(s.t / 1000));
-  const running = [...steps].reverse().find((s) => s.state === "running" && s.kind === "tool") ?? steps.find((s) => s.state === "running");
-  const busy = !waiting && (streaming || !!running);
-  const label = running?.label ?? "Writing";
-  // Elapsed time restarts whenever the agent starts something new.
-  const [since, setSince] = useState({ key: "", t });
-  const key = busy ? label : "";
-  if (since.key !== key || t < since.t) setSince({ key, t });
-  const elapsed = t - since.t;
-
-  return (
-    <div className="flex h-11 shrink-0 items-center gap-2.5 px-4">
-      <DotGrid mode={waiting ? "waiting" : busy ? "working" : "idle"} />
-      {waiting ? (
-        <span className="text-[13px] font-medium text-text">Waiting for your approval</span>
-      ) : busy ? (
-        <>
-          <span className="shimmer text-[13px] font-medium">{label}</span>
-          <span className="ml-auto font-mono text-[12px] text-muted">{elapsed}s</span>
-        </>
-      ) : (
-        <span className="text-[13px] text-muted">{steps.length ? "Idle" : "Starts when the device connects"}</span>
-      )}
-    </div>
-  );
-}
-
+// Only the status row animates; plan rows mark the current step without a second loader.
 function StepIcon({ step }: { step: AgentStep }) {
-  if (step.state === "running") return <span className="text-primary"><Spinner size={14} /></span>;
+  if (step.state === "running")
+    return (
+      <span className="grid size-[15px] place-items-center rounded-full border-[1.5px] border-primary">
+        <span className="size-[5px] rounded-full bg-primary" />
+      </span>
+    );
   if (step.state === "done")
     return (
       <span className="grid size-[15px] place-items-center rounded-full bg-[rgba(255,255,255,0.14)] text-text">
@@ -97,9 +72,9 @@ function ToolRow({ step }: { step: AgentStep }) {
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: EASE_UI }}
-      className="flex h-7 items-center gap-2 text-[13px] text-muted"
+      className={`flex h-7 items-center gap-2 text-[13px] ${step.state === "running" ? "text-text" : "text-muted"}`}
     >
-      {step.state === "running" ? <span className="text-primary"><Spinner size={12} /></span> : <IconTool size={13} />}
+      <IconTool size={13} className={step.state === "running" ? "text-primary" : ""} />
       <span className="truncate">{step.label}</span>
       {step.detail && (
         <span className="ml-auto shrink-0 rounded-[6px] bg-[rgba(255,255,255,0.06)] px-1.5 py-0.5 font-mono text-[11.5px] text-muted">
@@ -110,59 +85,94 @@ function ToolRow({ step }: { step: AgentStep }) {
   );
 }
 
-/** Beautiful UI "thinking" disclosure: plan with tool calls nested under each to-do. */
-function Trace({ steps }: { steps: AgentStep[] }) {
+/**
+ * One status row for the agent: what it is doing right now, which plan step
+ * that belongs to, and how long it has been at it. Clicking it opens the plan
+ * with tool calls nested under each step (Beautiful UI's thinking disclosure).
+ */
+function Status() {
+  const steps = useDash((s) => s.steps);
+  const streaming = useDash((s) => s.messages.some((m) => m.shown < m.text.length));
+  const waiting = useDash((s) => s.approval?.state === "pending");
+  const t = useDash((s) => Math.floor(s.t / 1000));
   const [open, setOpen] = useState(false);
-  const todos = steps.filter((s) => s.kind === "todo");
-  const done = todos.filter((s) => s.state === "done").length;
-  const tools = steps.filter((s) => s.kind === "tool");
-  const active = todos.find((s) => s.state === "running") ?? [...todos].reverse().find((s) => s.state === "done");
   const scroller = useRef<HTMLDivElement>(null);
+
+  const todos = steps.filter((s) => s.kind === "todo");
+  const tools = steps.filter((s) => s.kind === "tool");
+  const done = todos.filter((s) => s.state === "done").length;
+  const current = todos.find((s) => s.state === "running");
+  const runningTool = [...tools].reverse().find((s) => s.state === "running");
+  const busy = !waiting && (streaming || !!current || !!runningTool);
+  const label = waiting ? "Waiting for your approval" : runningTool?.label ?? (streaming ? "Writing" : current?.label ?? "Idle");
+  const stepNo = current ? todos.indexOf(current) + 1 : done;
+
+  // Elapsed time restarts whenever the agent starts something new.
+  const [since, setSince] = useState({ key: "", t });
+  const key = busy ? label : "";
+  if (since.key !== key || t < since.t) setSince({ key, t });
+  const elapsed = t - since.t;
 
   useEffect(() => {
     const el = scroller.current;
     const row = el?.querySelector<HTMLElement>("[data-active]");
     if (el && row) el.scrollTo({ top: row.offsetTop - 8, behavior: "smooth" });
-  }, [active?.id]);
+  }, [current?.id, open]);
 
-  if (!todos.length) return null;
+  if (!todos.length)
+    return (
+      <div className="flex h-12 shrink-0 items-center gap-2.5 px-4">
+        <DotGrid mode="idle" />
+        <span className="text-[13px] text-muted">Starts when the device connects</span>
+      </div>
+    );
+
   return (
-    <div className="mx-3 shrink-0 rounded-[12px] border border-[rgba(255,255,255,0.06)] bg-[rgba(0,0,0,0.18)]">
+    <div className="mx-3 mt-3 shrink-0 rounded-[12px] border border-[rgba(255,255,255,0.06)] bg-[rgba(0,0,0,0.18)]">
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex h-9 w-full items-center gap-2 rounded-[12px] px-3 text-[13px] text-text transition-colors duration-100 hover:bg-[rgba(255,255,255,0.03)]"
+        aria-expanded={open}
+        className="flex h-11 w-full items-center gap-2.5 rounded-[12px] px-3 text-left transition-colors duration-100 hover:bg-[rgba(255,255,255,0.03)]"
       >
-        <StepIcon step={active ?? todos[0]} />
-        <span className="truncate font-medium">{(todos.find((s) => s.state === "running") ?? active ?? todos[0]).label}</span>
-        <span className="shrink-0 text-muted">
-          {done}/{todos.length}
+        <DotGrid mode={waiting ? "waiting" : busy ? "working" : "idle"} />
+        <span className="flex min-w-0 flex-col leading-tight">
+          <span className={`truncate text-[13px] font-medium ${busy ? "shimmer" : "text-text"}`}>{label}</span>
+          <span className="truncate text-[12px] text-muted">
+            Step {Math.max(1, stepNo)} of {todos.length}
+            {current && ` · ${current.label}`}
+          </span>
         </span>
-        <IconChevronDown
-          size={14}
-          className="ml-auto text-muted transition-transform duration-300"
-          style={{ transform: open ? "rotate(180deg)" : "none" }}
-        />
+        <span className="ml-auto flex shrink-0 items-center gap-2">
+          {busy && <span className="font-mono text-[12px] text-muted">{elapsed}s</span>}
+          <IconChevronDown
+            size={14}
+            className="text-muted transition-transform duration-300"
+            style={{ transform: open ? "rotate(180deg)" : "none" }}
+          />
+        </span>
       </button>
       <div
         className="grid transition-[grid-template-rows,opacity] duration-[400ms]"
         style={{ gridTemplateRows: open ? "1fr" : "0fr", opacity: open ? 1 : 0, transitionTimingFunction: "cubic-bezier(0.23,1,0.32,1)" }}
       >
         <div className="min-h-0 overflow-hidden">
-          <div ref={scroller} className="scroll-thin relative max-h-[168px] overflow-y-auto px-3 pb-3"
+          <div
+            ref={scroller}
+            className="scroll-thin relative max-h-[168px] overflow-y-auto border-t border-[rgba(255,255,255,0.06)] px-3 pt-1.5 pb-3"
             style={{ maskImage: "linear-gradient(to bottom, black calc(100% - 20px), transparent)", WebkitMaskImage: "linear-gradient(to bottom, black calc(100% - 20px), transparent)" }}
           >
             <ul>
               {todos.map((todo) => {
-                const kids = tools.filter((t) => PARENT[t.id] === todo.id);
-                const isActive = todo.id === active?.id;
+                const kids = tools.filter((x) => PARENT[x.id] === todo.id);
+                const isActive = todo.state === "running";
                 return (
                   <li key={todo.id} data-active={isActive || undefined}>
                     <div className={`flex h-7 items-center gap-2.5 text-[13px] ${todo.state === "pending" ? "text-muted" : "text-text"}`}>
                       <StepIcon step={todo} />
                       <span className="truncate">{todo.label}</span>
                     </div>
-                    {kids.length > 0 && (isActive || todo.state === "running") && (
+                    {kids.length > 0 && todo.state !== "pending" && (
                       <ul className="ml-[7px] border-l border-[rgba(255,255,255,0.08)] pl-4">
                         {kids.map((k) => (
                           <ToolRow key={k.id} step={k} />
@@ -279,7 +289,6 @@ function Composer() {
 }
 
 export function AgentPanel() {
-  const steps = useDash((s) => s.steps);
   const messages = useDash((s) => s.messages);
   const scroller = useRef<HTMLDivElement>(null);
 
@@ -295,8 +304,7 @@ export function AgentPanel() {
       transition={{ duration: 0.6, ease: [0.08, 0.78, 0.56, 1], delay: 0.15 }}
       className="surface raised flex min-h-0 flex-1 flex-col overflow-hidden"
     >
-      <StatusLine />
-      <Trace steps={steps} />
+      <Status />
       <div
         ref={scroller}
         className="scroll-thin mt-2 flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-4 pt-4 pb-3"
