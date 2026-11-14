@@ -93,7 +93,7 @@ function ViewSwitch() {
         >
           <Icon size={15} />
           {/* Icons only on narrow screens. */}
-          <span className="hidden min-[1280px]:inline">{label}</span>
+          <span className="hidden @min-[760px]:inline">{label}</span>
         </button>
       ))}
     </div>
@@ -111,9 +111,9 @@ export function Header() {
       className="relative z-20 flex h-14 shrink-0 items-center gap-3"
     >
       {/* Delta: one long translucent nav pill. */}
-      {/* Three columns so the centred view switch can never overlap either side. */}
-      <div className="glass raised grid h-14 min-w-0 flex-1 grid-cols-[1fr_auto_1fr] items-center gap-4 rounded-full pl-5 pr-2">
-        <div className="flex min-w-0 items-center gap-5">
+      {/* Equal-weight sides keep the switch centred; the bar's own width decides what fits. */}
+      <div className="@container glass raised flex h-14 min-w-0 flex-1 items-center gap-4 rounded-full pl-5 pr-2">
+        <div className="flex min-w-0 flex-1 basis-0 items-center gap-5">
           <Logo />
           <span className="h-5 w-px shrink-0 bg-line" />
           <span className="min-w-0 truncate">
@@ -121,10 +121,10 @@ export function Header() {
           </span>
         </div>
         <ViewSwitch />
-        <div className="flex min-w-0 items-center justify-end gap-5">
+        <div className="flex min-w-0 flex-1 basis-0 items-center justify-end gap-5">
           <Elapsed />
-          <span className="hidden h-5 w-px bg-line min-[1180px]:block" />
-          <span className="hidden whitespace-nowrap text-[13px] text-muted min-[1180px]:inline">
+          <span className="hidden h-5 w-px bg-line @min-[900px]:block" />
+          <span className="hidden whitespace-nowrap text-[13px] text-muted @min-[900px]:inline">
             {formatClock(sec * 1000)} / {formatClock(DEMO_LENGTH_MS)}
           </span>
           <button
