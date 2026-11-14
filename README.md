@@ -29,11 +29,16 @@ uv venv --python 3.12 && uv pip install -r requirements.txt
 
 Needs `ANTHROPIC_API_KEY` (and `LANGSMITH_API_KEY` for traces) in `.env` at the repo root. Then open http://localhost:3000/?live=1 (or set `NEXT_PUBLIC_LUCID_MODE=live`).
 
-Pick a mock scan in the header (Temporal bleed, Clear, Uncertain) and press **Run scan**. About 30 s later the agent pauses with an approval card. A bleed pauses twice: once for the result, once before the pre-alert. Typing in the chat while a card is open rejects it with your text as the reason. Running a second scan on the same page re-scans the same patient against the saved baseline.
+Pick a mock scan in the header (Temporal bleed, Clear, Uncertain) and press **Run scan**. About 35 s later the agent pauses with a card:
 
-The UI connects with the LangGraph SDK (`useStream` in `components/LiveBridge.tsx`); `lib/live.ts` maps agent state onto the same store the demo uses. Agent design, tools and skills: [`agent/README.md`](agent/README.md).
+- **Temporal bleed** and **Clear** pause for the result; a bleed pauses again before the pre-alert.
+- **Uncertain** first asks you to re-scan the two weak-contact spots (**Re-scanned** / **Skip**), then runs the search again and proposes a result.
 
-Types changed for live mode (`lib/types.ts`): `ScanStatus` gained `"pending"` (no result stated before approval) and `"rejected"`; `AgentStep` gained optional `parent`; `ApprovalRequest` gained optional `title` and `detail`.
+Click any simulation card to open it: the head mesh with the bleed and the potential change the solver computed for each scan spot, the simulated reading against the real scan, and a live log of what that card's agent is doing. Typing in the chat while a card is open rejects it with your text as the reason. Running a second scan on the same page re-scans the same patient against the saved baseline.
+
+The UI connects with the LangGraph SDK (`useStream` in `components/LiveBridge.tsx`); `lib/live.ts` maps agent state onto the same store the demo uses, and `lib/solver.ts` fetches the solver output for the detail view (`components/SimDetail.tsx`). Agent design, tools and skills: [`agent/README.md`](agent/README.md).
+
+Types changed for live mode (`lib/types.ts`): `ScanStatus` gained `"pending"` (no result stated before approval) and `"rejected"`; `AgentStep` gained optional `parent`; `ApprovalRequest` gained optional `title`, `detail`, `approveLabel`, `rejectLabel`; `Simulation` gained optional `pass`, `by`, `note`, `reading`, `misfit`; `DashState` gained optional `reading` and `activity`.
 
 ## The 2-minute demo story
 

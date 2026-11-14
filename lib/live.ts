@@ -1,11 +1,13 @@
 import { SAMPLE_RATE_HZ } from "./config";
 import { REGIONS, deviceBuffer, deviceSample, initialSpots } from "./mock";
 import type {
+  AgentActivity,
   AgentStep,
   ApprovalRequest,
   ChatMessage,
   DashState,
   RegionAgent,
+  ScanReading,
   ScanSpot,
   ScanUpdate,
   Simulation,
@@ -37,6 +39,7 @@ export const SCAN_CASES: { id: ScanCase; label: string }[] = [
 
 const TRIGGER = "New scan ready.";
 const REJECT_MESSAGE = "The medic rejected this.";
+const SKIP_MESSAGE = "The medic skipped the re-scan.";
 
 // ---- Wire shapes (what the agent sends) -----------------------------------
 
@@ -77,12 +80,15 @@ export interface LiveValues {
   scan?: ScanUpdate | null;
   spots?: ScanSpot[];
   sims?: SimPatch[];
+  reading?: ScanReading | null;
   preview?: Preview | null;
   handoff?: Handoff | null;
 }
 
 export type LiveEvent =
-  | { type: "scan"; scan: ScanUpdate; spots?: ScanSpot[] }
+  | { type: "scan"; scan: ScanUpdate; spots?: ScanSpot[]; reading?: ScanReading }
+  | { type: "activity"; item: AgentActivity }
+  | { type: "todos"; todos: NonNullable<LiveValues["todos"]> }
   | { type: "sims_reset"; sims: SimPatch[] }
   | { type: "sims"; sims: SimPatch[] }
   | { type: "preview"; preview: Preview | null }
@@ -161,12 +167,19 @@ function toolRow(call: WireToolCall): { key: string; label: string; todo: number
     case "plan_hypotheses":
       return { key: "plan", label: "Planning hypotheses", todo: 1 };
     case "task":
-      return { key: "sim", label: "Running simulations", todo: 2 };
+      // The four region agents share one row; the skeptic gets its own.
+      return call.args?.subagent_type === "skeptic"
+        ? { key: "skeptic", label: "Second check", todo: 3 }
+        : { key: "sim", label: "Running simulations", todo: 2 };
     case "fit_score":
     case "rank_fits":
       return { key: "fit", label: "Scoring fit", todo: 3 };
     case "render_map":
       return { key: "map", label: "Rendering map", todo: 3 };
+    case "request_rescan":
+      return { key: "rescan", label: "Asking for re-scan", todo: 4 };
+    case "write_file":
+      return call.args?.file_path === "/report.md" ? { key: "report", label: "Writing hand-off report", todo: 4 } : null;
     case "submit_result":
       return { key: "result", label: "Recording result", todo: 4 };
     case "send_prealert": {
@@ -208,7 +221,9 @@ function initialState(run = 0, view: ViewId = "dashboard"): DashState {
     spots: initialSpots(),
     currentSpot: null,
     scan: null,
+    reading: null,
     sims: [],
+    activity: {},
     agents: deriveAgents([]),
     steps: [],
     messages: [],
@@ -252,13 +267,13 @@ export class LiveStore {
 
   // Latest wire data, and the refs already applied from `values`.
   private wire: { messages: WireMessage[]; isLoading: boolean } = { messages: [], isLoading: false };
-  private seen: Partial<Record<"scan" | "spots" | "sims" | "preview" | "handoff", unknown>> = {};
+  private seen: Partial<Record<"scan" | "spots" | "sims" | "reading" | "preview" | "handoff", unknown>> = {};
   private todos: NonNullable<LiveValues["todos"]> = [];
   private rawScan: ScanUpdate | null = null;
   private preview: Preview | null = null;
   // Messages that never reach the thread (errors, a rejection typed by the medic).
   private local: { after: number; queued: boolean; msg: ChatMessage }[] = [];
-  private interrupt: { key: string; count: number } | null = null;
+  private interrupt: { key: string; count: number; skip: boolean } | null = null;
   private resolved = new Set<string>();
   private patchTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -348,10 +363,21 @@ export class LiveStore {
     this.bridge.submit({ messages: [{ type: "human", content: TRIGGER }], scan_id: scan, patient_id: this.patientId });
   }
 
+  /** The plan only moves forward within a run, so a `values` snapshot from before a `todos` event cannot undo it. */
+  private applyTodos(todos: NonNullable<LiveValues["todos"]>) {
+    const reached = (list: typeof todos) =>
+      list.reduce((n, t) => n + (t.status === "completed" ? 2 : t.status === "in_progress" ? 1 : 0), 0);
+    if (todos.length !== this.todos.length || reached(todos) >= reached(this.todos)) this.todos = todos;
+  }
+
   /** A custom stream event. These arrive ahead of `values`, so apply them right away. */
   event(run: number, e: LiveEvent) {
     if (run !== this.state.run || !e || typeof e !== "object") return;
-    if (e.type === "scan") this.applyScan(e.scan, e.spots);
+    if (e.type === "scan") {
+      this.applyScan(e.scan, e.spots);
+      if (e.reading) this.set({ reading: e.reading });
+    } else if (e.type === "activity") this.applyActivity(e.item);
+    else if (e.type === "todos") this.applyTodos(e.todos);
     else if (e.type === "sims_reset") this.applySims(e.sims, "reset");
     else if (e.type === "sims") this.applySims(e.sims, "patch");
     else if (e.type === "preview") this.applyPreview(e.preview);
@@ -359,7 +385,7 @@ export class LiveStore {
     else return;
     this.rebuild();
     // Simulation patches arrive dozens per second; repaint at most ten times a second.
-    if (e.type !== "sims") this.emit();
+    if (e.type !== "sims" && e.type !== "activity") this.emit();
     else this.patchTimer ??= setTimeout(() => {
       this.patchTimer = null;
       this.emit();
@@ -379,6 +405,10 @@ export class LiveStore {
       this.seen.spots = v.spots;
       this.set({ spots: v.spots });
     }
+    if (v.reading && v.reading !== this.seen.reading) {
+      this.seen.reading = v.reading;
+      this.set({ reading: v.reading });
+    }
     if (v.sims?.length && v.sims !== this.seen.sims) {
       this.seen.sims = v.sims;
       this.applySims(v.sims, "all");
@@ -391,7 +421,7 @@ export class LiveStore {
       this.seen.handoff = v.handoff;
       this.applyHandoff(v.handoff);
     }
-    if (v.todos) this.todos = v.todos;
+    if (v.todos) this.applyTodos(v.todos);
     this.wire = { messages: snap.messages ?? [], isLoading: snap.isLoading };
     if (snap.isLoading) this.streaming = true;
 
@@ -445,7 +475,7 @@ export class LiveStore {
     this.emit();
   }
 
-  resolveApproval(approved: boolean, auto = false, message = REJECT_MESSAGE) {
+  resolveApproval(approved: boolean, auto = false, message = this.interrupt?.skip ? SKIP_MESSAGE : REJECT_MESSAGE) {
     void auto;
     const req = this.state.approval;
     const cur = this.interrupt;
@@ -524,31 +554,45 @@ export class LiveStore {
     if (handoff) this.timeline = { ...this.timeline, alertSent: true };
   }
 
+  private applyActivity(item: AgentActivity) {
+    if (!item || typeof item.agent !== "string") return;
+    const log = this.state.activity ?? {};
+    this.set({ activity: { ...log, [item.agent]: [...(log[item.agent] ?? []), item] } });
+  }
+
   /**
    * "reset" replaces the list, "all" is the full list from thread state, "patch"
-   * updates known simulations. A simulation never moves backwards.
+   * updates simulations and adds new ones (an agent refining). A simulation never
+   * moves backwards.
    */
   private applySims(incoming: SimPatch[], mode: "reset" | "all" | "patch") {
     if (!Array.isArray(incoming)) return;
     const old = new Map(mode === "reset" ? [] : this.state.sims.map((s) => [s.id, s]));
     const merge = (p: SimPatch): Simulation | null => {
       const prev = old.get(p.id);
-      if (!prev) return mode === "patch" ? null : ({ score: 0, progress: 0, status: "queued", ...p, map: p.map ?? [] } as Simulation);
+      // A patch for an unknown simulation only counts when it is a whole one.
+      if (!prev) return p.type ? ({ score: 0, progress: 0, status: "queued", ...p, map: p.map ?? [] } as Simulation) : null;
       const status = p.status ?? prev.status;
       if (SIM_RANK[status] < SIM_RANK[prev.status]) return prev;
       const score = p.score ?? prev.score;
       const progress = status === "done" ? 1 : Math.max(p.progress ?? 0, status === prev.status ? prev.progress : 0);
-      if (status === prev.status && score === prev.score && progress === prev.progress) return prev;
+      // Set once per run by the agent that picks the simulation up.
+      const by = prev.by ?? p.by;
+      const note = prev.note ?? p.note;
+      const reading = prev.reading ?? p.reading;
+      const misfit = prev.misfit ?? p.misfit;
+      if (status === prev.status && score === prev.score && progress === prev.progress && by === prev.by && reading === prev.reading && misfit === prev.misfit)
+        return prev;
       // Maps don't change within a run; keeping the old one saves redrawing every card.
-      return { ...prev, status, score, progress };
+      return { ...prev, status, score, progress, by, note, reading, misfit };
     };
-    let sims: Simulation[];
-    if (mode === "patch") {
-      const patches = new Map(incoming.map((p) => [p.id, p]));
-      sims = this.state.sims.map((s) => (patches.has(s.id) ? merge(patches.get(s.id)!) ?? s : s));
-    } else {
-      sims = incoming.map(merge).filter((s): s is Simulation => s !== null);
+    const merged = new Map<string, Simulation>();
+    for (const p of incoming) {
+      const s = merge(p);
+      if (s) merged.set(s.id, s);
     }
+    // Thread state can lag behind the events: keep what it does not list yet.
+    const sims = mode === "reset" ? [...merged.values()] : [...this.state.sims.map((s) => merged.get(s.id) ?? s), ...[...merged.values()].filter((s) => !old.has(s.id))];
     if (sims.length === this.state.sims.length && sims.every((s, i) => s === this.state.sims[i])) return;
 
     const t = this.state.t;
@@ -570,14 +614,17 @@ export class LiveStore {
     const key = (first as { id?: string }).id ?? JSON.stringify(requests);
     if (this.resolved.has(key) || this.interrupt?.key === key) return;
     const [title = "", ...rest] = (requests[0].description ?? "").split("\n");
+    const rescan = requests[0].name === "request_rescan";
     const approval: ApprovalRequest = {
       id: key,
       action: title || requests[0].name,
       title: title || requests[0].name,
       detail: rest.join(" ").trim() || undefined,
+      // A re-scan is something the medic does, not something they approve.
+      ...(rescan ? { approveLabel: "Re-scanned", rejectLabel: "Skip" } : {}),
       state: "pending",
     };
-    this.interrupt = { key, count: requests.length };
+    this.interrupt = { key, count: requests.length, skip: rescan };
     if (this.timeline.approvalAt === Infinity) this.timeline = { ...this.timeline, approvalAt: this.state.t };
     this.set({ approval });
     this.autoTab("scan");
@@ -617,11 +664,16 @@ export class LiveStore {
     flush(Infinity);
 
     // Plan: to-dos, with the lead's tool calls nested under them.
+    // While the agent waits for the medic it is on its last step; the pause lands before its own update does.
+    const asking = this.state.approval?.state === "pending";
+    const last = this.todos.length - 1;
     const steps: AgentStep[] = this.todos.map((t, i) => ({
       id: `todo-${i}`,
       kind: "todo",
       label: t.content,
-      state: t.status === "completed" ? "done" : t.status === "in_progress" ? "running" : "pending",
+      state: asking
+        ? i < last ? "done" : "running"
+        : t.status === "completed" ? "done" : t.status === "in_progress" ? "running" : "pending",
     }));
     const sims = this.state.sims;
     const simsDone = sims.filter((s) => s.status === "done");

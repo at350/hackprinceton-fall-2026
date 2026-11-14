@@ -3,13 +3,17 @@
 import { motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { drawDimBrain, loadBrain, renderScanned } from "@/lib/brain";
+import { LIVE } from "@/lib/live";
 import type { RegionAgent, Simulation } from "@/lib/types";
 import { HEAD } from "@/lib/mock";
 import { useDash } from "@/lib/useDash";
 import { IconCheck, IconClock, IconTarget, Ring } from "./icons";
+import { SimDetail } from "./SimDetail";
 import { EASE_EXPO } from "./ui";
 
 const TYPE_LABEL = { epidural: "Epidural", subdural: "Subdural", intraparenchymal: "Intraparenchymal" };
+// Simulations the agents added after the planned sweep say so in the status word.
+const PASS_STATUS = { coarse: ["Running", "Done"], refine: ["Refining", "Refined"], review: ["Second check", "Second check"] };
 const EASE_UI = [0.23, 1, 0.32, 1] as const;
 
 /** Beautiful UI task row: 44px capsule, icon left, count and status right. */
@@ -102,13 +106,14 @@ function Thumb({ sim }: { sim: Simulation }) {
   );
 }
 
-function SimCard({ sim, best }: { sim: Simulation; best: boolean }) {
+function SimCard({ sim, best, onOpen }: { sim: Simulation; best: boolean; onOpen?: (id: string) => void }) {
+  const [running, done] = PASS_STATUS[sim.pass ?? "coarse"];
   const status = best
     ? { text: "Best fit", el: <IconTarget size={13} />, color: "var(--primary)" }
     : sim.status === "done"
-      ? { text: "Done", el: <IconCheck size={12} strokeWidth={1.8} />, color: "var(--muted)" }
+      ? { text: done, el: <IconCheck size={12} strokeWidth={1.8} />, color: "var(--muted)" }
       : sim.status === "running"
-        ? { text: "Running", el: null, color: "var(--primary)" }
+        ? { text: running, el: null, color: "var(--primary)" }
         : { text: "Queued", el: <IconClock size={12} strokeWidth={1.8} />, color: "var(--muted)" };
   return (
     <motion.li
@@ -117,7 +122,13 @@ function SimCard({ sim, best }: { sim: Simulation; best: boolean }) {
       // Off-screen cards skip rendering: a live run fills the grid with about a hundred.
       className={`glass flex flex-col gap-3 p-3 transition-[border-color,opacity] duration-300 [contain-intrinsic-size:auto_136px] [content-visibility:auto] ${best ? "!border-primary" : "dim"} ${
         sim.status === "queued" ? "opacity-60" : ""
-      }`}
+      } ${onOpen ? `cursor-pointer ${best ? "" : "hover:border-line-strong"}` : ""}`}
+      {...(onOpen && {
+        role: "button",
+        tabIndex: 0,
+        onClick: () => onOpen(sim.id),
+        onKeyDown: (e: React.KeyboardEvent) => e.key === "Enter" && onOpen(sim.id),
+      })}
     >
       <div className="flex items-start gap-3">
         <Thumb sim={sim} />
@@ -160,6 +171,11 @@ const RANK = { running: 0, done: 1, queued: 2 } as const;
 export function SimulationsTab() {
   const sims = useDash((s) => s.sims);
   const agents = useDash((s) => s.agents);
+  // Live mode: the simulation whose detail replaces the grid.
+  const [openId, setOpenId] = useState<string | null>(null);
+  const open = openId ? sims.find((s) => s.id === openId) : undefined;
+  // Where the grid was scrolled to when a card was opened, to return to the same place.
+  const scrolled = useRef(0);
 
   const { ordered, bestId } = useMemo(() => {
     const done = sims.filter((s) => s.status === "done");
@@ -178,13 +194,23 @@ export function SimulationsTab() {
           <AgentRow key={a.region} a={a} />
         ))}
       </div>
-      <div className="scroll-thin mt-4 min-h-0 flex-1 overflow-y-auto px-5 pb-5">
-        <ul className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2.5">
-          {ordered.map((s) => (
-            <SimCard key={s.id} sim={s} best={s.id === bestId} />
-          ))}
-        </ul>
-      </div>
+      {open ? (
+        <div className="mt-4 min-h-0 flex-1 px-5 pb-5">
+          <SimDetail key={open.id} sim={open} best={open.id === bestId} onBack={() => setOpenId(null)} />
+        </div>
+      ) : (
+        <div
+          ref={(el) => void (el && (el.scrollTop = scrolled.current))}
+          onScroll={(e) => (scrolled.current = e.currentTarget.scrollTop)}
+          className="scroll-thin mt-4 min-h-0 flex-1 overflow-y-auto px-5 pb-5"
+        >
+          <ul className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2.5">
+            {ordered.map((s) => (
+              <SimCard key={s.id} sim={s} best={s.id === bestId} onOpen={LIVE ? setOpenId : undefined} />
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
