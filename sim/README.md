@@ -25,6 +25,7 @@ As readings come in:
 - It starts as a smooth, see-through average head. Each spot the probe reads folds the cortex near it into shape and makes it solid, so the brain builds up as the scan goes.
 - Each region swells or settles with its measured conductivity against a typical head (exaggerated about ten times). Hair strands grow with the measured hair and gap at each spot. Blood shows where the fit puts it.
 - The brain beats with the pulse in the near-infrared light, played back live, and the panel shows the heart rate and the trace.
+- A **Layers** panel switches each part on and off: scalp (a head-shaped glass shell with brow, nose and ears), skull (bone, see-through unless cut away), cutaway (slices off the half of scalp, skull and hair facing you), hair, brain, tissue swelling, blood (on the cortex and as a 3D cloud), pulse, and probe spots. The choice is remembered in the browser.
 - A tissue table gives each region's left and right conductivity and hair. Every finished scan leaves a snapshot under "Previous heads" (the last six are kept), so different heads can be compared.
 
 Honest scope: conductivity, hair and gap, pulse and blood are measured. The folding pattern is the fsaverage template, smoothed in `make_brain.py` for the "average head" stages.

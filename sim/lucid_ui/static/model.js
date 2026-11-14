@@ -9,10 +9,10 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { setupControls, pct } from './controls.js';
+import { headGeometry, scalpRadius, skullRadius } from './headshape.js';
 
 const $ = (id) => document.getElementById(id);
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-const R = 90;
 const SWELL_MM_PER_SD = 3.0;   // regional swelling per standard deviation of conductivity (about 10x real)
 const HAIR_SCALE = 3.0;        // hair drawn this many times longer than measured, to be visible
 const N_HAIR = 5000;
@@ -32,6 +32,7 @@ vec3 bloodRamp(float t) {
 const canvas = $('model-scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.localClippingEnabled = true;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color('#0d1626');
@@ -58,20 +59,27 @@ const rim = new THREE.DirectionalLight(0x6fb7f0, 1.0);
 rim.position.set(260, -300, 60);
 scene.add(rim);
 
-// The scalp: glass, with the ear line and midline for reference.
-scene.add(new THREE.Mesh(new THREE.SphereGeometry(R, 96, 64), new THREE.ShaderMaterial({
-  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-  vertexShader: 'varying vec3 vN; varying vec3 vV; void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0); vN = normalize(normalMatrix*normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix*mv; }',
-  fragmentShader: 'varying vec3 vN; varying vec3 vV; void main(){ float f = pow(1.0 - abs(dot(vN, vV)), 2.6); gl_FragColor = vec4(vec3(0.38,0.65,0.9) * (0.02 + 0.45*f), 1.0); }',
-})));
-const nose = new THREE.Mesh(new THREE.ConeGeometry(7, 18, 24), new THREE.MeshStandardMaterial({ color: 0x3a5c8c, transparent: true, opacity: 0.7 }));
-nose.position.set(0, R + 6, -6);
-nose.rotation.x = -Math.PI / 2;
-scene.add(nose);
+// Layers. The cutaway slices off the half of the scalp, skull and hair facing the camera.
+const cutPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+const layers = {};
+
+// The scalp: glass, head-shaped.
+layers.scalp = new THREE.Mesh(headGeometry(scalpRadius), new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, clipping: true,
+  vertexShader: '#include <clipping_planes_pars_vertex>\nvarying vec3 vN; varying vec3 vV; void main(){ vec4 mvPosition = modelViewMatrix * vec4(position,1.0); vN = normalize(normalMatrix*normal); vV = normalize(-mvPosition.xyz); gl_Position = projectionMatrix*mvPosition;\n#include <clipping_planes_vertex>\n}',
+  fragmentShader: '#include <clipping_planes_pars_fragment>\nvarying vec3 vN; varying vec3 vV; void main(){\n#include <clipping_planes_fragment>\nfloat f = pow(1.0 - abs(dot(vN, vV)), 2.6); gl_FragColor = vec4(vec3(0.38,0.65,0.9) * (0.02 + 0.45*f), 1.0); }',
+}));
+scene.add(layers.scalp);
+
+// The skull: bone. Solid when cut away, see-through otherwise so the brain still shows.
+layers.skull = new THREE.Mesh(headGeometry(skullRadius), new THREE.MeshStandardMaterial({
+  color: 0xe4d8c0, roughness: 0.85, metalness: 0, side: THREE.DoubleSide, transparent: true, opacity: 0.3, depthWrite: false,
+}));
+scene.add(layers.skull);
 
 // The brain
 
-const uniforms = { uPulse: { value: 0 } };
+const uniforms = { uPulse: { value: 0 }, uSwellOn: { value: 1 }, uHeatOn: { value: 1 } };
 let brain = null;   // { attrs: {grow, swell, heat}, current/target arrays, dirs, n }
 
 async function loadBrain() {
@@ -117,16 +125,16 @@ async function loadBrain() {
       .replace('#include <common>', `#include <common>
 attribute vec3 aInfl; attribute vec3 aBlob; attribute vec3 nInfl; attribute vec3 nBlob;
 attribute float grow; attribute float swell; attribute float heat; attribute float seed;
-uniform float uPulse;
+uniform float uPulse; uniform float uSwellOn; uniform float uHeatOn;
 varying float vGrow; varying float vHeat; varying float vSwell;`)
       .replace('#include <beginnormal_vertex>', `
 float g = clamp(grow * 1.15 - seed * 0.15, 0.0, 1.0);
 vec3 objectNormal = g < 0.5 ? normalize(mix(nBlob, nInfl, g * 2.0)) : normalize(mix(nInfl, normal, g * 2.0 - 1.0));`)
       .replace('#include <begin_vertex>', `
 vec3 transformed = g < 0.5 ? mix(aBlob, aInfl, g * 2.0) : mix(aInfl, position, g * 2.0 - 1.0);
-transformed += objectNormal * swell;
+transformed += objectNormal * swell * uSwellOn;
 transformed *= 1.0 + uPulse * 0.01;
-vGrow = g; vHeat = heat; vSwell = swell;`);
+vGrow = g; vHeat = heat * uHeatOn; vSwell = swell * uSwellOn;`);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\nvarying float vGrow; varying float vHeat; varying float vSwell;\n${RAMP_GLSL}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
@@ -144,6 +152,8 @@ totalEmissiveRadiance += bloodRamp(vHeat) * smoothstep(0.05, 0.9, vHeat) * 0.8;`
   const group = new THREE.Group();
   for (const p of parts) group.add(new THREE.Mesh(p.geo, mat));
   scene.add(group);
+  layers.brain = group;
+  applyLayers();
 
   const dirs = new Float32Array(total * 3);
   for (const p of parts) {
@@ -188,7 +198,9 @@ const hair = (() => {
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
   const lines = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: 0x9fb3cf, transparent: true, opacity: 0.45 }));
   scene.add(lines);
-  return { pos, base, spotIdx, len, geo };
+  layers.hair = lines;
+  const root = base.map((d) => scalpRadius(d) + 0.4);  // where each strand leaves the skin
+  return { pos, base, root, spotIdx, len, geo };
 })();
 
 let spots = [];      // [{id, side, region, dir}]
@@ -230,13 +242,57 @@ function rebuild(final) {
   }
 }
 
+// Probe spots: rings on the skin where the probe reads.
+layers.spots = new THREE.Group();
+scene.add(layers.spots);
+function drawSpots() {
+  layers.spots.clear();
+  for (const s of spots) {
+    const ring = new THREE.Mesh(new THREE.RingGeometry(5, 7, 40), new THREE.MeshBasicMaterial({
+      color: spotState[s.id] ? 0xffffff : 0x6fb7f0, transparent: true, opacity: spotState[s.id] ? 0.85 : 0.45, side: THREE.DoubleSide, depthWrite: false,
+    }));
+    ring.position.copy(s.dir.clone().multiplyScalar(scalpRadius(s.dir) + 0.8));
+    ring.lookAt(s.dir.clone().multiplyScalar(400));
+    layers.spots.add(ring);
+  }
+}
+
+// Blood: a glowing cloud where the fit puts it, besides the colour on the cortex.
+layers.cloud = (() => {
+  const max = 2000, geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(max * 3), 3));
+  geo.setAttribute('blood', new THREE.BufferAttribute(new Float32Array(max), 1));
+  geo.setDrawRange(0, 0);
+  const pts = new THREE.Points(geo, new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    vertexShader: 'attribute float blood; varying float vB; void main(){ vB = blood; vec4 mv = modelViewMatrix*vec4(position,1.0); gl_PointSize = (3.0 + 9.0*blood) * (420.0 / -mv.z); gl_Position = projectionMatrix*mv; }',
+    fragmentShader: `${RAMP_GLSL} varying float vB; void main(){ float d = length(gl_PointCoord-0.5); float a = smoothstep(0.5,0.05,d); gl_FragColor = vec4(bloodRamp(vB)*a*(0.1+0.5*vB),1.0); }`,
+  }));
+  scene.add(pts);
+  return pts;
+})();
+function setCloud(voxels) {
+  const geo = layers.cloud.geometry, pos = geo.attributes.position.array, b = geo.attributes.blood.array;
+  const list = (voxels || []).filter((v) => v.blood >= 0.04).slice(0, 2000);
+  list.forEach((v, i) => {
+    const w = (k) => { const s0 = Math.sin((i + 1) * (12.9898 + k * 78.233)) * 43758.5453; return (s0 - Math.floor(s0) - 0.5) * 5; };
+    pos.set([v.x + w(0), v.y + w(1), v.z + w(2)], i * 3);
+    b[i] = v.blood;
+  });
+  geo.attributes.position.needsUpdate = true;
+  geo.attributes.blood.needsUpdate = true;
+  geo.setDrawRange(0, list.length);
+}
+
 function hello(h) {
   spots = h.spots.map((s) => ({ ...s, dir: new THREE.Vector3(...s.pos).normalize() }));
+  setCloud([]);
   spotState = {};
   tissueRef = { sigma: h.tissue_sigma ?? 0.25, sd: h.region_sd ?? 0.04 };
   scanInfo = { label: h.label, speed: h.speed || 1 };
   $('scan-label').textContent = h.label;
   assignHair();
+  drawSpots();
   if (brain) brain.heat.target.fill(0);
   rebuild(false);
   $('model-phase').textContent = 'An average head, before any reading. Each spot the probe reads makes the region under it this person\'s.';
@@ -253,6 +309,8 @@ function update(u) {
   for (const row of u.spots) spotState[row.spot] = { sigma: row.sigma, se: row.sigma_se, gap: row.gap_mm, od: row.od, status: row.status, pulse: row.pulse_bpm };
   rebuild(u.final);
   if (brain) setHeat(u.cortex);
+  setCloud(u.voxels);
+  drawSpots();
   const n = Object.keys(spotState).length;
   const bpms = Object.values(spotState).map((s) => s.pulse).filter((v) => v != null);
   const bpm = u.heart_rate_bpm ?? (bpms.length ? bpms.sort((a, b) => a - b)[Math.floor(bpms.length / 2)] : null);
@@ -384,6 +442,53 @@ function capture() {
 
 try { JSON.parse(localStorage.getItem(GALLERY_KEY) || '[]').forEach(addToGallery); } catch { /* nothing saved */ }
 
+// Layer switches
+
+const LAYERS = [
+  ['scalp', 'Scalp', 'glass head, skin side'],
+  ['skull', 'Skull', 'bone under the scalp'],
+  ['cutaway', 'Cutaway', 'slice off the near half'],
+  ['hair', 'Hair', 'measured hair and gap'],
+  ['brain', 'Brain', 'cortex, built from the scan'],
+  ['tissue', 'Tissue', 'swelling from conductivity'],
+  ['blood', 'Blood', 'chance of blood'],
+  ['pulse', 'Pulse', 'beats with the NIR pulse'],
+  ['spots', 'Probe spots', 'where the probe read'],
+];
+const LAYER_KEY = 'lucid-model-layers';
+const LAYER_STATE = { scalp: true, skull: false, cutaway: true, hair: true, brain: true, tissue: true, blood: true, pulse: true, spots: true };
+try { Object.assign(LAYER_STATE, JSON.parse(localStorage.getItem(LAYER_KEY) || '{}')); } catch { /* defaults */ }
+
+function applyLayers() {
+  const L = LAYER_STATE;
+  const cut = L.cutaway ? [cutPlane] : [];
+  layers.scalp.visible = L.scalp;
+  layers.scalp.material.clippingPlanes = cut;
+  layers.skull.visible = L.skull;
+  layers.skull.material.clippingPlanes = cut;
+  layers.skull.material.opacity = L.cutaway ? 1 : 0.3;
+  layers.skull.material.depthWrite = L.cutaway;
+  layers.skull.material.needsUpdate = true;
+  if (layers.hair) { layers.hair.visible = L.hair; layers.hair.material.clippingPlanes = cut; layers.hair.material.needsUpdate = true; }
+  if (layers.brain) layers.brain.visible = L.brain;
+  layers.cloud.visible = L.blood;
+  layers.spots.visible = L.spots;
+  uniforms.uSwellOn.value = L.tissue ? 1 : 0;
+  uniforms.uHeatOn.value = L.blood ? 1 : 0;
+  document.querySelectorAll('#layers button').forEach((b) => b.setAttribute('aria-checked', String(!!L[b.dataset.layer])));
+  try { localStorage.setItem(LAYER_KEY, JSON.stringify(L)); } catch { /* not saved */ }
+}
+
+$('layers').innerHTML = LAYERS.map(([key, name, hint]) =>
+  `<button type="button" role="switch" data-layer="${key}" aria-checked="false" title="${hint}"><i></i><span>${name}</span></button>`).join('');
+$('layers').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-layer]');
+  if (!b) return;
+  LAYER_STATE[b.dataset.layer] = !LAYER_STATE[b.dataset.layer];
+  applyLayers();
+});
+applyLayers();
+
 // Loop
 
 function resize() {
@@ -412,12 +517,14 @@ renderer.setAnimationLoop(() => {
   }
   if (hairChanged) {
     for (let i = 0; i < N_HAIR; i++) {
-      const b = hair.base[i], l = hair.len.current[i];
-      hair.pos.set([b.x * (R + 0.4), b.y * (R + 0.4), b.z * (R + 0.4), b.x * (R + 0.4 + l), b.y * (R + 0.4 + l), b.z * (R + 0.4 + l)], i * 6);
+      const b = hair.base[i], l = hair.len.current[i], r0 = hair.root[i];
+      hair.pos.set([b.x * r0, b.y * r0, b.z * r0, b.x * (r0 + l), b.y * (r0 + l), b.z * (r0 + l)], i * 6);
     }
     hair.geo.attributes.position.needsUpdate = true;
   }
   stepPulse(dt);
+  if (!LAYER_STATE.pulse) uniforms.uPulse.value = 0;
+  cutPlane.normal.copy(camera.position).normalize().negate();  // keep the far half
   controls.update();
   composer.render();
 });
