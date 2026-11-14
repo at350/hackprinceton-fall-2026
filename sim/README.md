@@ -52,6 +52,23 @@ Steps:
 
    It is a model fit, not imaging: 5 surface pairs pin the side and region well but blur depth and size together. In simulation, healthy heads come out "none" every time; a 30 ml subdural lands within about 15 mm of its true edge with volume 45 ± 35 ml; the phantom balloon is placed under R-parietal (volume underestimated at about 55 ml, since spreads above 30 mm aren't in the grid).
 
+8. **Live mode** (`lucid_interp.live`). Runs during the scan and updates each time the probe leaves a spot:
+   - re-interprets everything so far and refits the bleed location from the finished pairs;
+   - turns the fit into a running **chance of bleed** (starting from `--prevalence`, default 10%);
+   - **simulates 500 heads** that fit the data so far (healthy, or bleeds drawn from the fit, each with natural asymmetry and noise, coil reading from the coil physics at the gap being seen) and predicts every remaining spot's conductivity and coil dB, healthy vs bleed;
+   - checks each new spot against its prediction; one far off "changed the picture" and gets a **confirming rescan** suggestion (only a second reading tells a find from bad contact);
+   - suggests the **next spot**: retakes, then confirmations, then the planned order, unless a finished pair has made another spot clearly more telling.
+
+   ```bash
+   python -m lucid_interp.live runs/demo.csv                       # replay a recording
+   python -m lucid_sim stream --bleed L-temporal | python -m lucid_interp.live -
+   python -m lucid_interp.live /dev/ttys004 --jsonl live.jsonl --render head.png   # board or `stream --pty`
+   ```
+
+   From Python (the app or the agents): `scan = LiveScan(); update = scan.feed(line)` per serial line; `update.text`, `update.p_bleed`, `update.next_spot`, `update.predictions`, `update.to_dict()`. Contacts are labelled in plan order, so when the operator goes somewhere else (a suggested spot or a rescan), the app calls `scan.follow(spot)` while the probe is in the air; a rescan is pooled with the first reading. `scan.finish()` gives the final update and blood map.
+
+   In simulation, healthy heads stay near 10% with no confirm prompts; a 30 ml L-temporal subdural goes past 95% at the temporal pair; the phantom balloon hits 100% at the parietal pair.
+
 Why not an inverse FFT across frequency to get depth: the detector keeps only amplitude (no phase), and at 3 MHz the field goes through the whole head. Frequency therefore doesn't map to depth. The inverse FFT is used on the time series instead, where it does separate physical sources.
 
 Results on simulated scans (8 heads each, 30% of spots with handling problems):

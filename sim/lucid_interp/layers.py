@@ -62,7 +62,8 @@ class Interpretation:
     calibration: Calibration = Calibration()
 
     def contact(self, spot: str) -> Contact:
-        for c in self.contacts:
+        """The spot's contact; its latest one if it was rescanned."""
+        for c in reversed(self.contacts):
             if c.spot == spot:
                 return c
         raise KeyError(spot)
@@ -212,7 +213,7 @@ def _spectral_features(interp: "Interpretation") -> None:
             "coil_noise_db": coil.rms["noise"],
         })
     feats = pd.DataFrame(extra, columns=["spot", "pulse_bpm", "pulse_snr", "tremor_g", "flicker_v",
-                                         "coil_drift_db_s", "coil_noise_db"])
+                                         "coil_drift_db_s", "coil_noise_db"]).drop_duplicates("spot", keep="last")
     interp.layers = interp.layers.merge(feats, on="spot", how="left")
     interp.spots = interp.spots.merge(feats, on="spot", how="left")
 
@@ -254,7 +255,11 @@ def _pairs(spots: pd.DataFrame, cal: Calibration) -> pd.DataFrame:
         row["d_od"] = row["od_R"] - row["od_L"]
         row["higher_side"] = "" if not np.isfinite(row["z"]) else ("R" if row["z"] > 0 else "L")
         rows.append(row)
-    return pd.DataFrame(rows)
+    out = pd.DataFrame(rows)
+    # A half-finished scan can leave a column all-missing, which pandas would store as objects.
+    numeric = [c for c in out.columns if c not in ("region", "higher_side")]
+    out[numeric] = out[numeric].astype(float)
+    return out
 
 
 def _flag(pairs: pd.DataFrame, spots: pd.DataFrame, cal: Calibration, notes: list[str]) -> dict:
@@ -321,7 +326,7 @@ def interpret(frames: pd.DataFrame, spots=DEFAULT_SPOTS, calibration: Calibratio
     rows = [r for c in contacts for r in _fit_contact(c, units, loss_db, in_air, fs, cal)]
     layers = pd.DataFrame(rows)
     spot_table = _combine_spots(layers) if len(layers) else pd.DataFrame(columns=["spot", "side", "region", "status"])
-    pairs = _pairs(spot_table, cal) if len(layers) else pd.DataFrame(columns=["region", "z"])
+    pairs = _pairs(spot_table, cal) if len(layers) else pd.DataFrame({"region": pd.Series(dtype=str), "z": pd.Series(dtype=float)})
     flag = _flag(pairs, spot_table, cal, notes)
     interp = Interpretation(layers, spot_table, pairs, flag, contacts, units, loss_db, fs, cal)
     if contacts:

@@ -3,6 +3,7 @@ import pytest
 
 import lucid_interp as li
 import lucid_sim as ls
+from lucid_interp.live import LiveScan
 from lucid_interp.truth import compare_to_truth
 
 
@@ -150,3 +151,46 @@ def test_locate_phantom_balloon_and_render(tmp_path):
 
     render_head(loc, tmp_path / "head.png")
     assert (tmp_path / "head.png").stat().st_size > 10_000
+
+
+def live_run(session, scan, follow_after=None):
+    updates = []
+    for line in ls.serial_lines(session):
+        u = scan.feed(line)
+        if u is not None:
+            updates.append(u)
+            if follow_after and u.done and u.done[-1] == follow_after and scan.plan.count(ls.Spot.parse(follow_after)) == 1:
+                scan.follow(follow_after)  # the operator rescans it, as the app would report
+    return updates, scan.finish()
+
+
+def test_live_updates_each_spot_and_predicts_the_next():
+    session = ls.simulate(ls.Subject(ls.HUMAN, [ls.Bleed("L-temporal")], seed=1), seed=1)
+    updates, final = live_run(session, LiveScan(n_sims=300))
+    assert len(updates) >= 8 and final.final
+    assert [len(u.done) for u in updates] == sorted(len(u.done) for u in updates)
+    assert updates[0].p_bleed == pytest.approx(0.1, abs=0.02)  # nothing known yet
+    assert final.p_bleed > 0.9 and final.location["side"] == "L"
+    first = updates[0]
+    assert first.next_spot == "R-frontal" and len(first.predictions) == 9
+    row = first.predictions.set_index("spot").loc["R-frontal"]
+    assert row["loss_db_lo"] < row["loss_db_hi"] < 0  # tissue always lowers the coil reading
+
+
+@pytest.mark.parametrize("seed", range(2))
+def test_live_healthy_stays_calm(seed):
+    session = ls.simulate(ls.Subject(ls.HUMAN, seed=seed), seed=seed)
+    updates, final = live_run(session, LiveScan(n_sims=300))
+    assert final.p_bleed < 0.15
+    assert not any(u.surprises for u in updates)
+
+
+def test_live_rescan_is_pooled():
+    plan = ls.default_plan()
+    plan.insert(6, ls.Dwell(plan[5].spot))  # R-temporal twice
+    session = ls.simulate(ls.Subject(ls.HUMAN, [ls.Bleed("L-temporal")], seed=3), plan, seed=3)
+    scan = LiveScan(n_sims=300)
+    _, final = live_run(session, scan, follow_after="R-temporal")
+    assert [c.spot for c in scan.interp.contacts].count("R-temporal") == 2
+    assert not any(c.spot.startswith("extra") for c in scan.interp.contacts)
+    assert scan.interp.flag["side"] == "L"
