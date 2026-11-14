@@ -24,7 +24,7 @@ function TabButton({ id, label, count, active }: { id: TabId; label: string; cou
         <motion.span
           layoutId="folder-tab"
           transition={{ duration: 0.5, ease: EASE_EXPO }}
-          className="absolute inset-0 -bottom-px rounded-t-[12px] border border-b-0 border-line bg-[rgba(16,19,22,0.42)] backdrop-blur-[32px]"
+          className="absolute inset-0 -bottom-px rounded-t-[14px] border border-b-0 border-[rgba(255,255,255,0.07)] bg-[rgba(20,22,27,0.58)] backdrop-blur-[28px]"
         />
       )}
       <span className="relative">{label}</span>

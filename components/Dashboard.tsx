@@ -14,18 +14,17 @@ export default function Dashboard() {
   }, []);
 
   return (
-    <>
-      <div className="backdrop" />
-      <main className="relative z-10 mx-auto flex h-full max-w-[1600px] flex-col gap-3 px-4 pb-4">
+    <main className="h-full p-3">
+      <div className="frame flex h-full flex-col gap-3 px-4 pt-3 pb-4">
         <Header />
-        <div className="flex min-h-0 flex-1 gap-4">
+        <div className="relative z-10 flex min-h-0 flex-1 gap-4">
           <LeftPanel />
-          <aside className="flex w-[420px] shrink-0 flex-col gap-4">
+          <aside className="flex w-[clamp(320px,29vw,420px)] shrink-0 flex-col gap-4">
             <LiveData />
             <AgentPanel />
           </aside>
         </div>
-      </main>
-    </>
+      </div>
+    </main>
   );
 }
