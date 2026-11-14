@@ -1,86 +1,327 @@
 "use client";
 
 import { motion } from "motion/react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { deriveTrace, type TraceLog, type TraceNode } from "@/lib/trace";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { drawDimBrain, loadBrain, renderScanned } from "@/lib/brain";
+import { demo } from "@/lib/demo";
+import { pointAt } from "@/lib/mock";
+import type { TraceFold, TraceHero, TraceLog, TraceNode, TracePanel, TracePlanStep } from "@/lib/trace";
+import { deriveTrace } from "@/lib/trace";
 import { formatClock, useDash } from "@/lib/useDash";
-import { IconChevronDown, Spinner } from "./icons";
-import { TraceCanvas } from "./TraceCanvas";
-import { EASE_ENTER } from "./ui";
+import { IconAnthropic, IconCheck, IconChevronDown, IconClock, IconPause, IconTool, IconX } from "./icons";
+import { NODE_ICON, TraceCanvas } from "./TraceCanvas";
+import { EASE_ENTER, SCAN_STATUS, heatRGB } from "./ui";
 
-const STATUS: Record<TraceNode["status"], { label: string; color: string }> = {
-  idle: { label: "Not run", color: "var(--muted)" },
-  running: { label: "Running", color: "var(--primary)" },
-  waiting: { label: "Waiting", color: "var(--primary)" },
-  success: { label: "Success", color: "var(--primary)" },
-  error: { label: "Rejected", color: "var(--bleed-text)" },
+// The node details panel: a header, one big thing, one sentence, and at most one
+// fold. No times, no field lists; the empty space below is intended.
+
+/** The plan's current step: a ring with a dot (as in the agent panel), never animated. */
+function Current({ size = 14 }: { size?: number }) {
+  return (
+    <span className="grid shrink-0 place-items-center rounded-full border-[1.5px] border-current" style={{ width: size, height: size }}>
+      <span className="size-[5px] rounded-full bg-current" />
+    </span>
+  );
+}
+
+const STATUS: Record<TraceNode["status"], { label: string; color: string; icon: ReactNode }> = {
+  idle: { label: "Not run", color: "var(--muted)", icon: <IconClock size={13} /> },
+  running: { label: "Running", color: "var(--primary)", icon: <Current size={13} /> },
+  waiting: { label: "Waiting for medic", color: "var(--primary)", icon: <IconPause size={13} /> },
+  success: { label: "Success", color: "var(--primary)", icon: <IconCheck size={13} /> },
+  error: { label: "Rejected", color: "var(--bleed-text)", icon: <IconX size={13} /> },
 };
 
-/** Inspector fields: label above value, no grid, so it can't be mistaken for a log. */
-function Fields({ rows, empty }: { rows: [string, string][]; empty: string }) {
-  if (!rows.length) return <p className="text-[13px] text-muted">{empty}</p>;
+const TONE = { primary: "var(--primary)", bleed: "var(--bleed-text)" };
+// Geist's cap height (measured: 0.726 em), and the Anthropic mark's outline within its 24px grid.
+const CAP = 0.726;
+const ANTHROPIC_BOX = "0 3.541 24 16.918";
+// Both edges fall in the body's empty padding at rest, so the fade only shows while scrolling.
+const FADE_EDGES = "linear-gradient(to bottom, transparent, black 24px, black calc(100% - 24px), transparent)";
+// 42px at full panel width, smaller as the panel narrows so short verdicts stay on one line.
+const BIG = "font-display text-[clamp(34px,2.9vw,42px)] font-medium leading-[1.04] tracking-[-0.045em]";
+
+/** The brain render with one hypothesis's heat, as on the simulation cards. */
+function BrainThumb({ map, size }: { map: number[][]; size: number }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    loadBrain().then(() => setLoaded(true));
+  }, []);
+  useEffect(() => {
+    if (!loaded) return;
+    const c = ref.current!;
+    const px = Math.round(size * devicePixelRatio);
+    c.width = c.height = px;
+    const ctx = c.getContext("2d")!;
+    drawDimBrain(ctx, px, 0.3);
+    ctx.drawImage(renderScanned(map, px, false), 0, 0);
+  }, [loaded, map, size]);
+  return <canvas ref={ref} className="shrink-0" style={{ width: size, height: size }} aria-hidden />;
+}
+
+// The spot ring: 330 × 184 px, map space scaled by K, spot marks just outside the brain.
+const RING = { w: 330, h: 184, k: 78, r: 1.16 };
+const heatHex = (v: number) => `rgb(${heatRGB(v).map(Math.round).join(",")})`;
+
+/** The scan on the brain with the 8 spots around it; only the highest reading and a weak spot are labelled. */
+function SpotRing({ hero }: { hero: Extract<TraceHero, { kind: "spots" }> }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    loadBrain().then(() => setLoaded(true));
+  }, []);
+  useEffect(() => {
+    if (!loaded) return;
+    const c = ref.current!;
+    const px = Math.round(c.clientWidth * devicePixelRatio);
+    c.width = c.height = px;
+    const ctx = c.getContext("2d")!;
+    drawDimBrain(ctx, px, 0.14);
+    if (hero.map) ctx.drawImage(renderScanned(hero.map, px), 0, 0);
+  }, [loaded, hero.map]);
+
+  const { w, h, k } = RING;
+  const side = (2 * k) / w;
+  const highest = hero.spots.reduce<(typeof hero.spots)[number] | null>((a, p) => (p.peak !== null && (!a || p.peak > a.peak!) ? p : a), null);
   return (
-    <dl className="flex flex-col gap-4">
-      {rows.map(([k, v], i) => (
-        <div key={i} className="flex flex-col gap-1">
-          <dt className="text-[12px] text-muted first-letter:uppercase">{k}</dt>
-          <dd className="text-[14px] leading-snug text-text">{v}</dd>
+    <div className="relative w-full" style={{ aspectRatio: `${w} / ${h}` }}>
+      <canvas
+        ref={ref}
+        className="absolute"
+        style={{ left: `${((1 - side) / 2) * 100}%`, top: `${((h - 2 * k) / 2 / h) * 100}%`, width: `${side * 100}%`, height: `${((2 * k) / h) * 100}%` }}
+        aria-hidden
+      />
+      <svg viewBox={`${-w / 2} ${-h / 2} ${w} ${h}`} className="absolute inset-0 size-full" role="img" aria-label="Peak reading at each of the 8 scan spots, seen from above, patient's left on the left">
+        {hero.spots.map((p) => {
+          const at = pointAt(p.angle, RING.r);
+          const x = at.x * k;
+          const y = at.y * k;
+          const left = x < -1;
+          const isWeak = hero.weak.includes(p.index);
+          const fill = p.peak !== null ? heatHex((p.peak - 0.1) / 0.8) : hero.current === p.index ? "var(--primary)" : "rgba(20,23,28,0.85)";
+          const stroke = isWeak ? "var(--uncertain)" : `rgba(255,255,255,${p.peak !== null && p.peak > 0.5 ? 0.55 : 0.3})`;
+          return (
+            <g key={p.index}>
+              <circle cx={x} cy={y} r={5.5} fill={fill} stroke={stroke} />
+              {p === highest && (
+                <text x={left ? x - 12 : x + 12} y={y + 4} fontSize={12} textAnchor={left ? "end" : "start"} fill="var(--text)">
+                  {p.name} <tspan fill={p.peak! > 0.5 ? "var(--bleed-text)" : "var(--muted)"}>{p.peak!.toFixed(2)}</tspan>
+                </text>
+              )}
+              {isWeak && p !== highest && (
+                <text x={left ? x - 10 : x + 10} y={y + 13} fontSize={11} textAnchor={left ? "end" : "start"} fill="var(--uncertain)">
+                  {p.state === "rescan" ? "re-scan" : "weak contact"}
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+function Figure({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-3">
+      <span className="label">{label}</span>
+      <p className={`${BIG} whitespace-nowrap text-text`}>{value}</p>
+    </div>
+  );
+}
+
+function Hero({ hero }: { hero: TraceHero }) {
+  switch (hero.kind) {
+    case "verdict": {
+      const v = SCAN_STATUS[hero.status];
+      return (
+        <p className={`flex items-start gap-3 ${BIG}`} style={{ color: v.color }}>
+          <v.Icon size={30} className="mt-[6px] shrink-0" />
+          <span>{v.label}</span>
+        </p>
+      );
+    }
+    case "statement":
+      if (hero.size === "question") return <p className="font-display text-[27px] font-medium leading-[1.12] tracking-[-0.035em] text-text">{hero.text}</p>;
+      // The mark's viewBox is cropped to its outline so its height can match the capitals.
+      if (hero.icon === "anthropic")
+        return (
+          <p className={`flex items-center gap-[0.24em] ${BIG} text-text`}>
+            <IconAnthropic viewBox={ANTHROPIC_BOX} className="shrink-0" style={{ height: `${CAP}em`, width: `${(CAP * 24) / 16.918}em` }} />
+            <span>{hero.text}</span>
+          </p>
+        );
+      return (
+        <p className={`flex items-start gap-3 ${BIG}`} style={{ color: hero.tone ? TONE[hero.tone] : "var(--text)" }}>
+          {hero.icon === "check" && <IconCheck size={30} className="mt-[6px] shrink-0" />}
+          {hero.icon === "x" && <IconX size={30} className="mt-[6px] shrink-0" />}
+          <span>{hero.text}</span>
+        </p>
+      );
+    case "number":
+      return <Figure label={hero.label} value={hero.value} />;
+    case "fit":
+      return (
+        <div className="flex items-center gap-[22px]">
+          <BrainThumb map={hero.map} size={96} />
+          <Figure label={hero.label} value={hero.value} />
+        </div>
+      );
+    case "spots":
+      return <SpotRing hero={hero} />;
+  }
+}
+
+// Folds start open. Closing one keeps that kind closed on every node that has it,
+// until the page reloads.
+const foldOpen: Partial<Record<TraceFold["kind"], boolean>> = {};
+
+/** beautifului.dev Thinking row: chevron, label, count on the right; collapses in place. */
+function Fold({ fold, children }: { fold: TraceFold; children: ReactNode }) {
+  const [open, setOpen] = useState(foldOpen[fold.kind] ?? true);
+  const toggle = () => {
+    foldOpen[fold.kind] = !open;
+    setOpen(!open);
+  };
+  return (
+    <div className="shrink-0 border-y border-line">
+      <button type="button" aria-expanded={open} onClick={toggle} className="flex h-11 w-full items-center gap-2 text-left text-[13.5px] text-text">
+        <IconChevronDown
+          size={12}
+          className="shrink-0 text-muted transition-transform duration-200"
+          style={{ transform: open ? "none" : "rotate(-90deg)", transitionTimingFunction: "var(--ease-hover)" }}
+        />
+        <span>{fold.title}</span>
+        <span className="ml-auto text-[12.5px] text-muted">{fold.count}</span>
+      </button>
+      <div
+        className="grid transition-[grid-template-rows] duration-300"
+        style={{ gridTemplateRows: open ? "1fr" : "0fr", transitionTimingFunction: "var(--ease-hover)" }}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <div className="flex flex-col pb-4 pl-5">{children}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** beautifului.dev Task Rows (List): check, current or pending, with the step's tool calls as verb plus mono argument. */
+function PlanStep({ step, waiting }: { step: TracePlanStep; waiting: boolean }) {
+  return (
+    <>
+      <div className={`flex min-h-8 items-center gap-2.5 text-[13px] ${step.state === "pending" ? "text-muted" : "text-text"}`}>
+        <span className="flex w-4 shrink-0 justify-center text-primary">
+          {step.state === "done" ? (
+            <IconCheck size={14} />
+          ) : step.state === "running" ? (
+            waiting ? <IconPause size={14} /> : <Current />
+          ) : (
+            <span className="size-[13px] rounded-full border border-[rgba(255,255,255,0.22)]" />
+          )}
+        </span>
+        <span>{step.label}</span>
+      </div>
+      {step.tools.map((x) => (
+        <div key={x.id} className={`flex min-h-7 items-center gap-2.5 pl-[26px] text-[13px] ${x.running ? "text-text" : "text-muted"}`}>
+          <IconTool size={13} className="shrink-0 text-muted" />
+          <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+            <span>{x.label}</span>
+            {x.detail && <span className="font-mono text-[11.5px] text-muted">{x.detail}</span>}
+          </span>
         </div>
       ))}
-    </dl>
+    </>
+  );
+}
+
+function FoldBody({ fold }: { fold: TraceFold }) {
+  if (fold.kind === "plan") return fold.steps.map((s) => <PlanStep key={s.id} step={s} waiting={fold.waiting} />);
+  // Live hand-off: who said it, muted, over what they said.
+  if (fold.kind === "messages")
+    return (
+      <ul className="flex flex-col gap-3.5 pt-1">
+        {fold.items.map((x) => (
+          <li key={x.id} className="flex flex-col gap-1 text-[13px] leading-[1.5]">
+            {x.who && <span className="text-[12px] text-muted">{x.who}</span>}
+            <span className="text-text">{x.text}</span>
+          </li>
+        ))}
+      </ul>
+    );
+  return (
+    <ul className="flex flex-col gap-3 pt-1">
+      {fold.items.map((x) => (
+        <li key={x.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-1.5 text-[12.5px]">
+          <span className={`truncate ${x.score === null ? "text-muted" : "text-text"}`}>{x.label}</span>
+          <span className={x.best ? "text-primary" : "text-text"}>{x.score?.toFixed(2)}</span>
+          {x.score !== null && (
+            <span className="relative col-span-2 h-1 rounded-[2px] bg-[rgba(255,255,255,0.08)]">
+              <i className="absolute inset-y-0 left-0 rounded-[2px]" style={{ width: `${x.score * 100}%`, background: x.best ? "var(--primary)" : "rgba(237,238,240,0.6)" }} />
+            </span>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** beautifului.dev Approval Card actions, under the question. */
+function Actions() {
+  const approval = useDash((s) => s.approval);
+  if (approval?.state !== "pending") return null;
+  return (
+    <div className="-mt-2 flex gap-2">
+      <button
+        type="button"
+        onClick={() => demo.resolveApproval(false)}
+        className="flex h-[34px] items-center gap-1.5 rounded-[10px] px-3.5 text-[13px] font-medium text-text transition-colors duration-100 hover:bg-raised active:scale-[0.97]"
+      >
+        <IconX size={13} />
+        {approval.rejectLabel ?? "Reject"}
+      </button>
+      <button
+        type="button"
+        onClick={() => demo.resolveApproval(true)}
+        className="flex h-[34px] items-center gap-1.5 rounded-[10px] bg-primary px-4 text-[13px] font-semibold text-[#04141a] transition-transform duration-150 active:scale-[0.97]"
+      >
+        <IconCheck size={13} />
+        {approval.approveLabel ?? "Approve"}
+      </button>
+    </div>
   );
 }
 
 function Details({ node }: { node: TraceNode }) {
-  const tabs = node.kind === "agent" ? (["Reasoning", "Output", "Input"] as const) : (["Output", "Input"] as const);
-  const [tab, setTab] = useState<(typeof tabs)[number]>(tabs[0]);
-  const active = tabs.includes(tab as never) ? tab : tabs[0];
+  const p: TracePanel = node.panel;
   const s = STATUS[node.status];
-  const dur = node.startedAt !== null && node.endedAt !== null ? `${((node.endedAt - node.startedAt) / 1000).toFixed(1)}s` : null;
+  const Icon = NODE_ICON[node.id] ?? NODE_ICON.agent;
 
   return (
     <aside className="surface raised flex w-[clamp(300px,27vw,380px)] shrink-0 flex-col overflow-hidden">
-      <header className="flex flex-col gap-1.5 px-4 pt-4 pb-3">
-        <h2 className="text-[17px] font-medium tracking-[-0.02em] text-text">{node.title}</h2>
-        <div className="flex items-center gap-2 text-[13px]">
-          <span className="flex items-center gap-1.5 font-medium" style={{ color: s.color }}>
-            {node.status === "running" && <Spinner size={12} />}
-            {node.statusLabel ?? s.label}
-          </span>
-          {node.startedAt !== null && <span className="text-muted">· started {formatClock(node.startedAt)}</span>}
-          {dur && <span className="text-muted">· {dur}</span>}
-        </div>
+      <header className="flex items-center justify-between gap-3 px-6 pt-[18px]">
+        <h2 className="flex min-w-0 items-center gap-2 text-[13px] font-medium text-text">
+          <Icon size={14} className="shrink-0 text-muted" />
+          <span className="truncate">{node.title}</span>
+        </h2>
+        <span className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[12.5px] font-medium" style={{ color: s.color }}>
+          {s.icon}
+          {p.status ?? s.label}
+        </span>
       </header>
-      {/* Tabs with an underline, as in n8n's node details. */}
-      <div role="tablist" className="flex gap-5 border-b border-[rgba(255,255,255,0.08)] px-4">
-        {tabs.map((t) => (
-          <button
-            key={t}
-            type="button"
-            role="tab"
-            aria-selected={active === t}
-            onClick={() => setTab(t)}
-            className={`-mb-px border-b-2 pb-2 text-[13.5px] font-medium transition-colors duration-150 ${
-              active === t ? "border-primary text-text" : "border-transparent text-muted hover:text-text"
-            }`}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
-      <div className="scroll-thin min-h-0 flex-1 overflow-y-auto p-4">
-        {active === "Output" && <Fields rows={node.output} empty="No output yet." />}
-        {active === "Input" && <Fields rows={node.input} empty="No input." />}
-        {active === "Reasoning" && !node.reasoning.length && <p className="text-[13px] text-muted">No reasoning yet.</p>}
-        {active === "Reasoning" && node.reasoning.length > 0 && (
-          <ol className="flex flex-col gap-4">
-            {node.reasoning.map((r, i) => (
-              <li key={i} className="flex gap-3">
-                <span className="mt-0.5 w-5 shrink-0 text-right font-mono text-[12px] text-muted">{i + 1}</span>
-                <p className="text-[13.5px] leading-[1.55] text-[rgba(237,238,240,0.92)]">{r}</p>
-              </li>
-            ))}
-          </ol>
+      {/* On a short window an open fold scrolls here, fading at the edges rather than cutting a row. */}
+      <div
+        className="scroll-thin flex min-h-0 flex-1 flex-col gap-7 overflow-y-auto px-6 pt-11 pb-5"
+        style={{ maskImage: FADE_EDGES, WebkitMaskImage: FADE_EDGES }}
+      >
+        {p.hero && <Hero hero={p.hero} />}
+        {p.sentence && <p className={`text-[15px] leading-[1.55] ${p.quiet ? "text-muted" : "text-[rgba(237,238,240,0.9)]"}`}>{p.sentence}</p>}
+        {p.actions && <Actions />}
+        {p.fold && (
+          <Fold fold={p.fold}>
+            <FoldBody fold={p.fold} />
+          </Fold>
         )}
       </div>
     </aside>

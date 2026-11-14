@@ -202,6 +202,7 @@ export interface DashState {
   currentSpot: number | null;
   scan: ScanUpdate | null;
   reading?: ScanReading | null; // live mode
+  baseline?: { taken_at?: string } | null; // live mode: unset until read, null when none is on file
   sims: Simulation[];
   activity?: Record<string, AgentActivity[]>; // live mode: per agent, oldest first
   agents: RegionAgent[];
