@@ -9,6 +9,7 @@ import json
 import os
 import sys
 from contextlib import contextmanager
+from functools import lru_cache
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -442,31 +443,58 @@ def test_map_png():
     assert img.format == "PNG" and img.size == (1080, 1350), img.size
 
 
+@lru_cache(maxsize=1)
+def no_signal_redness() -> np.ndarray:
+    rgb = np.asarray(Image.open(io.BytesIO(physics.map_png(np.full((64, 64), 0.06)))).convert("RGB"), int)
+    return rgb[..., 0] - rgb[..., 2]
+
+
+def heat_mask(png: bytes) -> np.ndarray:
+    """Pixels the heat tints red, against the same image of a map with no signal."""
+    rgb = np.asarray(Image.open(io.BytesIO(png)).convert("RGB"), int)
+    hot = rgb[..., 0] - rgb[..., 2] - no_signal_redness() > 20
+    hot[:270] = hot[1200:] = False  # the verdict and the captions
+    return hot
+
+
 def heat_columns(png: bytes) -> np.ndarray:
-    """x of the pixels the heat tints red, against the same image of a map with no signal, in the brain band."""
-    def redness(data):
-        rgb = np.asarray(Image.open(io.BytesIO(data)).convert("RGB"), int)[300:1220]
-        return rgb[..., 0] - rgb[..., 2]
-    return np.nonzero(redness(png) - redness(physics.map_png(np.full((64, 64), 0.06))) > 20)[1]
+    """x of the heat pixels anywhere in the brain band."""
+    return np.nonzero(heat_mask(png))[1]
+
+
+def heat_by_view(png: bytes) -> tuple[np.ndarray, int, int]:
+    """x of the heat pixels in the view from above, and the heat pixel counts in the left and right side views."""
+    hot = heat_mask(png)
+    top, sides = hot[270:840], hot[840:1200]
+    return np.nonzero(top)[1], int(sides[:, :540].sum()), int(sides[:, 540:].sum())
 
 
 def test_map_png_left_right():
-    # Patient's left on screen left, as on the dashboard: map column 0 is the patient's left.
-    for region, left in (("L temporal", True), ("R temporal", False), ("L frontal", True), ("R parietal", False)):
-        xs = heat_columns(physics.map_png(physics.hypothesis_map("epidural", region, 30, 64), {"status": "bleed", "region": region}))
-        assert len(xs) > 200, (region, len(xs))
-        assert (np.median(xs) < 540) == left, (region, np.median(xs))
-    grid = np.full((64, 64), 0.06)
-    grid[:, :24] = 0.95  # a plain left-sided map, independent of the bleed shapes
-    xs = heat_columns(physics.map_png(grid))
-    assert len(xs) > 200 and (xs < 540).mean() > 0.98, (len(xs), (xs < 540).mean())
+    # Patient's left on screen left from above, as on the dashboard (map column 0 is the patient's left); a lateral
+    # map lights its own side view ("Left side" bottom left, "Right side" bottom right) and nothing on the other one.
+    # (A 30 mL frontal subdural is left out: in the map itself it wraps across the midline at the front.)
+    for region in ("L temporal", "R temporal", "L parietal", "R parietal", "L frontal", "R frontal"):
+        for kind in ("epidural", "subdural", "intraparenchymal"):
+            if kind == "subdural" and "frontal" in region:
+                continue
+            top, on_left, on_right = heat_by_view(physics.map_png(physics.hypothesis_map(kind, region, 30, 64), {"status": "bleed", "region": region}))
+            left = region.startswith("L")
+            own, other = (on_left, on_right) if left else (on_right, on_left)
+            assert len(top) > 100 and (np.median(top) < 540) == left, (region, kind, len(top), np.median(top) if len(top) else None)
+            assert own > 1000 and other == 0, (region, kind, own, other)
+    for cols, left in ((slice(0, 24), True), (slice(40, 64), False)):  # plain one-sided maps, independent of the bleed shapes
+        grid = np.full((64, 64), 0.06)
+        grid[:, cols] = 0.95
+        top, on_left, on_right = heat_by_view(physics.map_png(grid))
+        assert len(top) > 1000 and ((top < 540).mean() > 0.98 if left else (top >= 540).mean() > 0.98), (cols, len(top))
+        assert (on_left > 5000 and on_right == 0) if left else (on_right > 5000 and on_left == 0), (cols, on_left, on_right)
 
 
 def test_map_png_without_cortex_cache():
     from lucid.physics import render
 
     render._cortex.cache_clear()
-    with patched(render, CORTEX=Path("/nonexistent/cortex_top.npz")):
+    with patched(render, CORTEX=Path("/nonexistent/cortex_views.npz")):
         png = physics.map_png(physics.hypothesis_map("epidural", "L temporal", 30, 64), {"status": "bleed", "region": "L temporal"})
         assert render._cortex() is None
     render._cortex.cache_clear()

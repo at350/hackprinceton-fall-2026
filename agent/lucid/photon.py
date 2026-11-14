@@ -102,6 +102,28 @@ def spoken_transport(transport: dict | None) -> str:
     return f"{transport['unit']}, about {transport['eta_min']} minutes out" if transport else ""
 
 
+_NOTE_FIELDS = ("age_sex", "mechanism", "gcs", "pupils", "bp", "hr")
+
+
+def notes_line(notes: dict | None) -> str:
+    """The medic's notes as plain sentences: "Male, about 40. Fell about 3 m ... GCS 13, pupils equal and reactive. BP 152/88, heart rate 96."."""
+    if not notes:
+        return ""
+    if not any(notes.get(k) for k in _NOTE_FIELDS):
+        return str(notes.get("text") or "").strip()
+    neuro = ", ".join(p for p in (f"GCS {notes['gcs']}" if notes.get("gcs") else "", f"pupils {notes['pupils']}" if notes.get("pupils") else "") if p)
+    vitals = ", ".join(p for p in (f"BP {notes['bp']}" if notes.get("bp") else "", f"heart rate {notes['hr']}" if notes.get("hr") else "") if p)
+    return " ".join(f"{str(p).rstrip('.')}." for p in (notes.get("age_sex"), notes.get("mechanism"), neuro, vitals) if p)
+
+
+def spoken_notes(notes: dict | None) -> str:
+    """The notes written to be read aloud on a call: "blood pressure 152 over 88", "3 meters"."""
+    text = re.sub(r"(^|[.!?]\s+)BP\b", r"\1Blood pressure", notes_line(notes))
+    text = re.sub(r"\bBP\b", "blood pressure", text)
+    text = re.sub(r"\b(\d{2,3})/(\d{2,3})\b", r"\1 over \2", text)
+    return re.sub(r"\b(\d+(?:\.\d+)?) ?m\b", r"\1 meters", text)
+
+
 def prealert_text(message: str, patient_id: str, transport: dict | None = None) -> str:
     """The pre-alert as sent: who it is from and for which patient (id, never a name), the model's text, where the patient
     is and when they arrive (added if the model left the ETA out), the safety line, how to reply."""

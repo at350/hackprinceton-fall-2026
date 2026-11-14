@@ -1,5 +1,6 @@
 """All tunables in one place."""
 
+import json
 import os
 from pathlib import Path
 
@@ -51,3 +52,17 @@ DEFAULT_PATIENT = "demo-patient"
 UNIT = os.getenv("LUCID_UNIT", "Medic 12")
 ETA_MIN = int(os.getenv("LUCID_ETA_MIN", "12"))
 ORIGIN = os.getenv("LUCID_ORIGIN", "on scene, en route")
+# The medic's notes, simulated the same way. LUCID_MEDIC_NOTES may be JSON with any of these fields, or one plain sentence.
+MEDIC_NOTES: dict = {
+    "age_sex": "Male, about 40",
+    "mechanism": "Fell about 3 m from a ladder 25 minutes ago",
+    "gcs": 13,
+    "pupils": "equal and reactive",
+    "bp": "152/88",
+    "hr": 96,
+}
+if _notes := os.getenv("LUCID_MEDIC_NOTES"):
+    try:
+        MEDIC_NOTES = {**MEDIC_NOTES, **json.loads(_notes)}
+    except (ValueError, TypeError):
+        MEDIC_NOTES = {"text": _notes}

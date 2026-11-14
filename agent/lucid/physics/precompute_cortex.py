@@ -1,11 +1,13 @@
-"""Precompute the cortex seen from above for the map image: `python -m lucid.physics.precompute_cortex` (from agent/).
+"""Precompute the cortex views for the map image: `python -m lucid.physics.precompute_cortex` (from agent/).
 
 The dashboard's Scan tab draws the FreeSurfer fsaverage6 cortex with three.js (lib/brain-scene.ts): orthographic,
-from above, nose up, patient's left on screen left. This bakes that view once, without a browser: it decodes
-public/models/fsaverage6.bin.gz (lib/brain-model.ts), rasterises the front faces with a z-buffer at 4 x 4 samples
-per pixel, runs the fragment shader up to `vec3 cortex` and `projectCortexMap(vHead)` on every sample, and box-filters
-the samples into pixels. data/cortex_top.npz then holds, per pixel: the lit cortex colour, the map coordinate, the heat
-opacity and the coverage (anti-aliased edge). render.py adds the scan heat at send time.
+from above, nose up, patient's left on screen left, and the medic can orbit it. This bakes three views once, without
+a browser: from above, and from the patient's left and right sides (crown up, each hemisphere alone). It decodes
+public/models/fsaverage6.bin.gz (lib/brain-model.ts), turns the mesh into view space as the scene's rotated group does,
+rasterises the front faces with a z-buffer at 4 x 4 samples per pixel, runs the fragment shader up to `vec3 cortex`
+(lights on view-space normals, `vPosition` in object space) and `projectCortexMap(vHead)` (object space) on every
+sample, and box-filters the samples into pixels. data/cortex_views.npz then holds, per view and pixel: the lit cortex
+colour, the map coordinate, the heat opacity and the coverage (anti-aliased edge). render.py adds the scan heat.
 """
 from __future__ import annotations
 
@@ -16,11 +18,11 @@ import zipfile
 import numpy as np
 
 from . import DATA_DIR
+from .render import CORTEX as CORTEX_PATH
+from .render import VIEWS
 
 REPO = DATA_DIR.parents[1]
 MODEL = REPO / "public" / "models" / "fsaverage6.bin.gz"
-CORTEX_PATH = DATA_DIR / "cortex_top.npz"
-SCALE = 470  # pixels per scene unit: the size render.py draws at for a 1080 px wide image
 SS = 4  # samples per pixel along each axis
 BASE = np.array([0.58, 0.64, 0.68])
 RX, RY = 0.676, 0.92  # lib/brain-heat.ts
@@ -144,21 +146,30 @@ def rasterise(pos: np.ndarray, faces: np.ndarray, x0: float, y1: float, w: int, 
     return win
 
 
-def main() -> None:
-    t0 = time.perf_counter()
+def load() -> dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
+    """Each hemisphere: positions, normals (as the scene computes them), cavity, faces."""
     hemis = decode(gzip.decompress(MODEL.read_bytes()))
-    pos = np.concatenate([p for p, _, _ in hemis])
-    nrm = np.concatenate([normals(p, f) for p, f, _ in hemis])
-    sulc = np.concatenate([s for _, _, s in hemis])
-    faces = np.concatenate([hemis[0][1], hemis[1][1] + len(hemis[0][0])])
+    return {side: (p, normals(p, f), s, f) for side, (p, f, s) in zip(("left", "right"), hemis)}
+
+
+def merge(parts) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Several hemispheres as one mesh."""
+    offsets = np.cumsum([0] + [len(p) for p, _, _, _ in parts])
+    return (*(np.concatenate([part[i] for part in parts]) for i in range(3)), np.concatenate([f + o for (_, _, _, f), o in zip(parts, offsets)]))
+
+
+def bake(mesh, rotation: np.ndarray, scale: float) -> dict[str, np.ndarray]:
+    """One view: the mesh turned by `rotation` (object to view space; camera at +z, up +y), at `scale` px per unit."""
+    pos, nrm, sulc, faces = mesh
+    view, vnrm = pos.astype(np.float64) @ rotation.T, nrm @ rotation.T  # modelViewMatrix, normalMatrix
 
     # Pixel box around the silhouette, a few pixels of margin.
-    lo, hi = pos[:, :2].min(0), pos[:, :2].max(0)
-    left, right = int(np.floor(lo[0] * SCALE)) - 4, int(np.ceil(hi[0] * SCALE)) + 4
-    bottom, top = int(np.floor(lo[1] * SCALE)) - 4, int(np.ceil(hi[1] * SCALE)) + 4
-    x0, y1, w, h = left / SCALE, top / SCALE, right - left, top - bottom
-    W, H, step = w * SS, h * SS, 1 / (SCALE * SS)
-    win = rasterise(pos, faces, x0, y1, W, H, step)
+    lo, hi = view[:, :2].min(0), view[:, :2].max(0)
+    left, right = int(np.floor(lo[0] * scale)) - 4, int(np.ceil(hi[0] * scale)) + 4
+    bottom, top = int(np.floor(lo[1] * scale)) - 4, int(np.ceil(hi[1] * scale)) + 4
+    x0, y1, w, h = left / scale, top / scale, right - left, top - bottom
+    W, H, step = w * SS, h * SS, 1 / (scale * SS)
+    win = rasterise(view, faces, x0, y1, W, H, step)
 
     # Shade every covered sample (in chunks, to bound memory) and box-filter into pixels: coverage, and the mean of
     # each attribute (cortex rgb, map uv, heat opacity) over the covered samples.
@@ -169,13 +180,13 @@ def main() -> None:
         f = faces[win[part]]
         rr, cc = part // W, part % W
         px, py = x0 + (cc + 0.5) * step, y1 - (rr + 0.5) * step
-        a, b, c = (pos[f[:, i]].astype(np.float64) for i in range(3))
+        a, b, c = (view[f[:, i]] for i in range(3))
         area = (b[:, 0] - a[:, 0]) * (c[:, 1] - a[:, 1]) - (b[:, 1] - a[:, 1]) * (c[:, 0] - a[:, 0])
         l1 = ((px - a[:, 0]) * (c[:, 1] - a[:, 1]) - (py - a[:, 1]) * (c[:, 0] - a[:, 0])) / area
         l2 = ((b[:, 0] - a[:, 0]) * (py - a[:, 1]) - (b[:, 1] - a[:, 1]) * (px - a[:, 0])) / area
         l = np.stack([1 - l1 - l2, l1, l2], -1)[..., None]
-        p = (l * np.stack([a, b, c], 1)).sum(1)
-        n = (l * nrm[f]).sum(1)
+        p = (l * pos[f]).sum(1)  # vPosition, and through displayToHead vHead: object space
+        n = (l * vnrm[f]).sum(1)  # vNormal: view space
         n /= np.linalg.norm(n, axis=1, keepdims=True)
         uv, opacity = project(p)
         attrs = np.c_[shade(n, (l[..., 0] * sulc[f]).sum(1), p), uv, opacity]
@@ -186,12 +197,22 @@ def main() -> None:
     mean = (sums / np.maximum(count, 1)).T.reshape(h, w, 6)
     cover = (count / SS**2).reshape(h, w)
     on = (cover > 0)[..., None]
-    arrays = {
+    return {
         "cortex": np.where(on, np.round(mean[..., :3] * 255), 0).clip(0, 255).astype(np.uint8),
         "uv": np.where(on, mean[..., 3:5], 0).astype(np.float16),
         "opacity": np.where(on[..., 0], np.round(mean[..., 5] * 255), 0).astype(np.uint8),
         "alpha": np.round(cover * 255).astype(np.uint8),
-        "frame": np.array([x0, y1, SCALE], np.float64),  # pixel (r, c) centre: x0 + (c + .5) / scale, y1 - (r + .5) / scale
+        "frame": np.array([x0, y1, scale], np.float64),  # pixel (r, c) centre: x0 + (c + .5) / scale, y1 - (r + .5) / scale
+    }
+
+
+def main() -> None:
+    t0 = time.perf_counter()
+    mesh = load()
+    arrays = {
+        f"{name}_{key}": arr
+        for name, (rotation, scale, sides) in VIEWS.items()
+        for key, arr in bake(merge([mesh[side] for side in sides]), np.array(rotation, float), scale).items()
     }
     # np.savez_compressed, with fixed zip timestamps so a rebuild gives the same bytes.
     with zipfile.ZipFile(CORTEX_PATH, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
@@ -200,7 +221,8 @@ def main() -> None:
             info.compress_type = zipfile.ZIP_DEFLATED
             with z.open(info, "w") as fh:
                 np.lib.format.write_array(fh, arr, allow_pickle=False)
-    print(f"wrote {CORTEX_PATH} ({w} x {h} px, {CORTEX_PATH.stat().st_size / 1e6:.2f} MB) in {time.perf_counter() - t0:.1f} s")
+    sizes = ", ".join(f"{name} {arrays[name + '_alpha'].shape[1]} x {arrays[name + '_alpha'].shape[0]}" for name in VIEWS)
+    print(f"wrote {CORTEX_PATH} ({sizes} px, {CORTEX_PATH.stat().st_size / 1e6:.2f} MB) in {time.perf_counter() - t0:.1f} s")
 
 
 if __name__ == "__main__":

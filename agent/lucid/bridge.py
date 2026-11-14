@@ -219,7 +219,9 @@ async def on_no_reply(record: dict, lg) -> None:
         state = await lg.threads.get_state(thread_id)
         variables = {"report": str(current.get("report") or ""), "message": str(current.get("message") or ""),
                      "patient_id": str(current.get("patient_id") or ""), "evidence": _evidence(state.get("values") or {}),
-                     "transport": photon.spoken_transport(current.get("transport"))}
+                     "transport": photon.spoken_transport(current.get("transport")),
+                     "medic_notes": photon.spoken_notes(current.get("medic_notes")),
+                     "unit": str((current.get("transport") or {}).get("unit") or "")}
         # A decision may have arrived while the thread was busy with the channel event.
         fresh = await update_record(lg, thread_id, lambda rec: rec)
         if not fresh or fresh.get("reply"):

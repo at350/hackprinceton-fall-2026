@@ -1,9 +1,10 @@
 """The bleed map as a PNG, for the pre-alert text message.
 
 The picture the medic has on the dashboard's Scan tab: the verdict and its numbers, and under them the 3D cortex
-(lib/brain-scene.ts) seen from above, nose up, patient's left on screen left, with the scan heat on it. The cortex
-view is baked once by precompute_cortex.py (data/cortex_top.npz); here the scan grid is sampled and tinted per pixel
-exactly as the fragment shader does it. Drawn with Pillow and numpy only, so it is safe in a worker thread.
+(lib/brain-scene.ts) with the scan heat on it, seen from above (nose up, patient's left on screen left) and, as the
+medic sees it when orbiting, from the patient's left and right sides. A temporal bleed sits on the side wall, a thin
+rim from above. The views are baked once by precompute_cortex.py (data/cortex_views.npz); here the scan grid is
+sampled and tinted per pixel exactly as the fragment shader does it. Pillow and numpy only, safe in a worker thread.
 """
 from __future__ import annotations
 
@@ -18,7 +19,7 @@ from PIL import Image, ImageDraw, ImageFont
 from .geometry import HEAD_RX, HEAD_RY
 
 REPO = Path(__file__).resolve().parents[3]
-CORTEX = Path(__file__).resolve().parents[2] / "data" / "cortex_top.npz"  # precompute_cortex.py
+CORTEX = Path(__file__).resolve().parents[2] / "data" / "cortex_views.npz"  # precompute_cortex.py
 FONTS = REPO / "app" / "fonts"
 
 # app/globals.css
@@ -26,7 +27,15 @@ BG, TEXT, MUTED, BLEED, UNCERTAIN, SAFE = (0x0D, 0x0F, 0x11), (0xED, 0xEE, 0xF0)
 HEAT = np.array([[int(h[i : i + 2], 16) for i in (1, 3, 5)] for h in ("#39170f", "#501306", "#601b0b", "#702818", "#893826", "#b14932", "#ff5a36")], float)
 BASE = np.array([0.58, 0.64, 0.68])  # the cortex albedo in the fragment shader
 CAPTION = "Screening aid, not a diagnosis. Confirm with CT."
-SCALE = 470  # pixels per scene unit at 1080 px wide; precompute_cortex.py bakes at this size
+# The views precompute_cortex.py bakes: the rotation from object to view space (camera at +z looking down -z, up +y;
+# object +x right ear, +y nose, +z crown), the size in px per scene unit at 1080 px wide, and which hemispheres are
+# drawn. Sides: crown up, each hemisphere alone so a side view never shows the other one past the poles; from the
+# left the front is on screen left, from the right on screen right. The two sides share a scale so they compare.
+VIEWS = {
+    "top": (((1, 0, 0), (0, 1, 0), (0, 0, 1)), 300, ("left", "right")),
+    "left": (((0, -1, 0), (0, 0, 1), (-1, 0, 0)), 256, ("left",)),
+    "right": (((0, 1, 0), (0, 0, 1), (1, 0, 0)), 256, ("right",)),
+}
 # components/icons.tsx: Phosphor warning, question and shield-check (light), on their 256 grid.
 ICONS = {
     "alert": "M235.07 189.09L147.61 37.22a22.75 22.75 0 0 0-39.22 0L20.93 189.09a21.53 21.53 0 0 0 0 21.72A22.35 22.35 0 0 0 40.55 222h174.9a22.35 22.35 0 0 0 19.6-11.19a21.53 21.53 0 0 0 .02-21.72m-10.41 15.71a10.46 10.46 0 0 1-9.21 5.2H40.55a10.46 10.46 0 0 1-9.21-5.2a9.51 9.51 0 0 1 0-9.72l87.45-151.87a10.75 10.75 0 0 1 18.42 0l87.46 151.87a9.51 9.51 0 0 1-.01 9.72M122 144v-40a6 6 0 0 1 12 0v40a6 6 0 0 1-12 0m16 36a10 10 0 1 1-10-10a10 10 0 0 1 10 10",
@@ -56,15 +65,18 @@ def _ramp(t: np.ndarray) -> np.ndarray:
 
 @lru_cache(maxsize=1)
 def _cortex() -> dict | None:
-    """The baked view (precompute_cortex.py), only the covered pixels kept. None if the file is missing or unreadable."""
+    """The baked views (precompute_cortex.py), only the covered pixels kept. None if the file is missing or unreadable."""
     try:
+        views = {}
         with np.load(CORTEX) as d:
-            alpha = d["alpha"] / 255
-            on = alpha > 0
-            return {
-                "shape": alpha.shape, "on": on, "alpha": alpha[on], "frame": d["frame"],
-                "cortex": d["cortex"][on] / 255, "uv": d["uv"][on].astype(np.float64), "opacity": d["opacity"][on] / 255,
-            }
+            for name in VIEWS:
+                alpha = d[f"{name}_alpha"] / 255
+                on = alpha > 0
+                views[name] = {
+                    "shape": alpha.shape, "on": on, "alpha": alpha[on], "frame": d[f"{name}_frame"],
+                    "cortex": d[f"{name}_cortex"][on] / 255, "uv": d[f"{name}_uv"][on].astype(np.float64), "opacity": d[f"{name}_opacity"][on] / 255,
+                }
+        return views
     except Exception:  # noqa: BLE001 - a broken cache must not stop the hand-off: map_png falls back to the outline
         return None
 
@@ -99,21 +111,18 @@ def _smoothstep(e0, e1, x):
     return t * t * (3 - 2 * t)
 
 
-def _brain_layer(grid, scale: float) -> tuple[Image.Image, tuple[float, float]] | None:
-    """The cortex with the heat on it, as RGBA over transparent, and the scene origin's pixel in it. None without the cache."""
-    c = _cortex()
-    if c is None:
-        return None
-    value, coverage = _sample(_texture(grid), c["uv"])
+def _brain_layer(tex: np.ndarray, view: dict, scale: float) -> tuple[Image.Image, tuple[float, float]]:
+    """One baked view with the heat on it, as RGBA over transparent, and the scene origin's pixel in it."""
+    value, coverage = _sample(tex, view["uv"])
     # The fragment shader's tissue(), fully revealed.
-    alpha = (_smoothstep(0.2, 0.65, value) * 0.94 * c["opacity"])[:, None]
+    alpha = (_smoothstep(0.2, 0.65, value) * 0.94 * view["opacity"])[:, None]
     heat = _ramp(np.clip((value - 0.15) / 0.75, 0, 1))
-    cortex = c["cortex"]
+    cortex = view["cortex"]
     out = cortex * (0.2 + 0.8 * coverage)[:, None] * (1 - alpha) + heat * (cortex / BASE) * alpha
-    img = np.zeros((*c["shape"], 4), np.uint8)
-    img[c["on"]] = np.round(np.c_[np.clip(out, 0, 1), c["alpha"]] * 255)
+    img = np.zeros((*view["shape"], 4), np.uint8)
+    img[view["on"]] = np.round(np.c_[np.clip(out, 0, 1), view["alpha"]] * 255)
     layer = Image.fromarray(img, "RGBA")
-    x0, y1, baked = c["frame"]
+    x0, y1, baked = view["frame"]
     k = scale / baked
     if abs(k - 1) > 1e-6:
         layer = layer.resize((max(1, round(layer.width * k)), max(1, round(layer.height * k))), Image.LANCZOS)
@@ -282,17 +291,29 @@ def map_png(grid, result: dict | None = None, width_px: int = 1080) -> bytes:
             cx += px + 2 * dot
         cx = _text(d, (cx, base), p, 400, px, TEXT, tracking=-0.02)
 
-    # The cortex, centred, with L and R beside it where the Scan tab puts them (x = -0.98 and 0.98, mid-height).
-    scale, centre = SCALE * k, (w / 2, 762 * k)
+    # From above, centred, with L and R beside it where the Scan tab puts them (x = -0.98 and 0.98, mid-height);
+    # under it the left and right sides, each named, spaced evenly between the header and the caption.
     try:
-        brain = _brain_layer(grid, scale)
+        views, tex = _cortex(), _texture(grid)
+        brains = views and [(_brain_layer(tex, views[name], VIEWS[name][1] * k), at) for name, at in (
+            ("top", (w / 2, 552 * k)), ("left", (w / 2 - 248 * k, 1020 * k)), ("right", (w / 2 + 248 * k, 1020 * k)))]
     except Exception:  # noqa: BLE001 - an unexpected grid must not stop the image
-        brain = None
-    layer, origin = brain or _plain_layer(grid, scale)
-    out.paste(layer, (round(centre[0] - origin[0]), round(centre[1] - origin[1])), layer)
-    side = dict(weight=500, px=round(0.06 * scale), fill=MUTED, anchor="m")
-    _text(d, (centre[0] - 0.98 * scale, centre[1] + 0.02 * scale), "L", **side)
-    _text(d, (centre[0] + 0.98 * scale, centre[1] + 0.02 * scale), "R", **side)
+        brains = None
+    small = dict(weight=500, px=round(24 * k), fill=MUTED, anchor="m")
+    if brains:
+        for (layer, origin), at in brains:
+            out.paste(layer, (round(at[0] - origin[0]), round(at[1] - origin[1])), layer)
+        scale, (cx, cy) = VIEWS["top"][1] * k, brains[0][1]
+        _text(d, (cx - 0.98 * scale, cy + 8 * k), "L", **small)
+        _text(d, (cx + 0.98 * scale, cy + 8 * k), "R", **small)
+        _text(d, (w / 2 - 248 * k, 1226 * k), "Left side", **small)
+        _text(d, (w / 2 + 248 * k, 1226 * k), "Right side", **small)
+    else:  # no baked cortex: the heat inside the head outline, from above only
+        scale, (cx, cy) = 470 * k, (w / 2, 762 * k)
+        layer, origin = _plain_layer(grid, scale)
+        out.paste(layer, (round(cx - origin[0]), round(cy - origin[1])), layer)
+        _text(d, (cx - 0.98 * scale, cy + 0.02 * scale), "L", **(small | {"px": round(0.06 * scale)}))
+        _text(d, (cx + 0.98 * scale, cy + 0.02 * scale), "R", **(small | {"px": round(0.06 * scale)}))
 
     foot = " ".join(filter(None, [f"Patient {r['patient_id']}." if r.get("patient_id") else "", CAPTION]))
     _text(d, (x, h - 64 * k), foot, 400, round(28 * k), MUTED)

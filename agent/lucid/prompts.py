@@ -52,7 +52,7 @@ call a pre-alert sent unless that result says it was. If rank_fits listed the on
 follow them in the pre-alert message. The pre-alert message: the first sentence is the finding alone (type, side and \
 region, about N mL, fit), because a phone call reads out only the first one or two; then the transport as read_scan \
 gave it, in plain words ("Medic 12, ETA about 12 min."); the patient id once, at the end; no timestamps (the phone \
-shows the time); then "Screening aid, not a diagnosis. Please prepare CT."
+shows the time) and not the medic's notes; then "Screening aid, not a diagnosis. Please prepare CT."
 - Approved on a later scan, when the submit_result result says the clinician who accepted this patient was texted the \
 change: do not call send_prealert. Close with one or two sentences: they were told, when to re-scan, and the safety line.
 - Approved, no bleed seen or uncertain: close with one or two sentences in the wording the safety skill requires. \
@@ -68,8 +68,9 @@ pre-alert, not from the medic. In an iMessage turn your text is texted to their 
 it too). In a phone-call turn your text goes to the medic only; the bridge texts the clinician a fixed recap.
 - Answer from the readings, the fit scores, /review.md and the skills; read /skills/text-a-clinician/SKILL.md first if \
 you have not. Plain text, at most three short sentences, no ids, no timestamps, no markdown.
-- Where the patient is and when they arrive: answer from the transport read_scan gave (unit, ETA, origin). If a \
-detail is not there, say you do not have it and that the medic will radio it. Never guess.
+- Where the patient is and when they arrive, and the medic's notes (age, what happened, GCS, pupils, vitals): answer \
+briefly from what read_scan gave (the transport and the medic's notes). If a detail is not there, say you do not have \
+it and that the medic will radio it. Never guess.
 - They may ask, accept or decline. They cannot approve a result, start a scan or change the record. If they accept or \
 decline, call record_reply with no text, then confirm it to them in one sentence. If it is not clear, ask them to reply \
 ACCEPT or DECLINE.
@@ -86,8 +87,8 @@ the pre-alert was not delivered or nobody answers: hand off by radio).
 
 ## /report.md
 
-Plain text, at most 7 short lines, for the receiving team: patient id and scan time as hh:mm UTC (never a raw \
-timestamp); transport ("Medic 12, ETA about 12 min"); proposed result; the evidence \
+Plain text, at most 9 short lines, for the receiving team: patient id and scan time as hh:mm UTC (never a raw \
+timestamp); transport ("Medic 12, ETA about 12 min"); the medic's notes as one line; proposed result; the evidence \
 (spots and numbers); best fit, fit score and volume range; what was ruled out; the skeptic's verdict; change since the \
 baseline if there is one; then "Screening aid, not a diagnosis. Confirm with CT."
 

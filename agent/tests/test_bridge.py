@@ -600,7 +600,11 @@ def test_voice_disabled_or_non_phone_destination_uses_text_fallback():
 def test_voice_call_answer_is_recorded_and_sent_to_the_lead():
     async def go():
         lg = FakeLG()
-        rec = record(sent_at=ago(120), transport={"unit": "Medic 12", "eta_min": 12, "origin": "on scene, en route", "as_of": ago(100)})
+        rec = record(
+            sent_at=ago(120),
+            transport={"unit": "Medic 12", "eta_min": 12, "origin": "on scene, en route", "as_of": ago(100)},
+            medic_notes={"age_sex": "Male, about 40", "mechanism": "Fell about 3 m from a ladder 25 minutes ago", "gcs": 13, "pupils": "equal and reactive", "bp": "152/88", "hr": 96},
+        )
         lg.put(rec)
         outcome = {"answered": True, "decision": "accept", "summary": "Clinician accepts.", "duration_s": 18, "transcript": [{"role": "user", "text": "I accept."}]}
         placed = []
@@ -615,7 +619,7 @@ def test_voice_call_answer_is_recorded_and_sent_to_the_lead():
         saved = lg.get()["call"]
         assert saved["status"] == "answered" and saved["conversation_id"] == "voice-123"
         assert saved["summary"] == "Clinician accepts." and saved["duration_s"] == 18
-        assert placed == [(HANDLE, {"report": "R", "message": "Lucid pre-alert", "patient_id": "P-0042", "evidence": '{"best_by_region": [{"id": "epi-LT-15", "type": "epidural", "region": "L temporal", "volume_ml": 15, "score": 0.91}], "no_bleed_fit": 0.1}', "transport": "Medic 12, about 12 minutes out"})]
+        assert placed == [(HANDLE, {"report": "R", "message": "Lucid pre-alert", "patient_id": "P-0042", "evidence": '{"best_by_region": [{"id": "epi-LT-15", "type": "epidural", "region": "L temporal", "volume_ml": 15, "score": 0.91}], "no_bleed_fit": 0.1}', "transport": "Medic 12, about 12 minutes out", "medic_notes": "Male, about 40. Fell about 3 meters from a ladder 25 minutes ago. GCS 13, pupils equal and reactive. Blood pressure 152 over 88, heart rate 96.", "unit": "Medic 12"})]
         assert [call["metadata"]["kind"] for call in lg.calls] == ["channel", "call"]
         [call_input] = [call["input"]["messages"][0]["content"] for call in lg.calls if call["metadata"]["kind"] == "call"]
         assert call_input.startswith(bridge.CALL_TAG)

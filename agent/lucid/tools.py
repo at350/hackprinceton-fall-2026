@@ -16,7 +16,7 @@ from langgraph.types import Command
 
 from lucid import photon, physics
 from lucid.backend import backend, baseline_path, notes_path
-from lucid.config import COARSE_VOLUMES, DEFAULT_PATIENT, DEFAULT_SCAN, ETA_MIN, MAX_HYPOTHESES, MAX_NEW_PER_CALL, ORIGIN, SIM_PACE_S, UNIT
+from lucid.config import COARSE_VOLUMES, DEFAULT_PATIENT, DEFAULT_SCAN, ETA_MIN, MAX_HYPOTHESES, MAX_NEW_PER_CALL, MEDIC_NOTES, ORIGIN, SIM_PACE_S, UNIT
 from lucid.decision import decide, describe
 
 NO_BLEED = "no-bleed"
@@ -98,6 +98,7 @@ async def _publish_scan(runtime: ToolRuntime, scan: dict) -> dict:
         "map": await asyncio.to_thread(physics.likelihood_map, scan, 64),
         "status": "pending",  # no result is stated before the medic approves it
         "transport": scan.get("transport"),
+        "medic_notes": scan.get("medic_notes"),
         "region": "None",
         "volume_ml": 0,
         "confidence": 0,
@@ -108,6 +109,7 @@ async def _publish_scan(runtime: ToolRuntime, scan: dict) -> dict:
         "patient_id": scan["patient_id"],
         "taken_at": scan["taken_at"],
         "transport": scan.get("transport"),
+        "medic_notes": scan.get("medic_notes"),
         "healthy": {"coil_db": healthy["coil_db"][0], "nir": healthy["nir"][0]},
         "spots": [
             {**s, "coil_change_db": round(s["coil_db"] - healthy["coil_db"][s["index"]], 2), "nir_change": round(s["nir"] - healthy["nir"][s["index"]], 4)}
@@ -135,7 +137,8 @@ async def read_scan(runtime: ToolRuntime) -> Command:
     taken = datetime.now(UTC).isoformat(timespec="seconds")
     # Simulated like the device: which unit has the patient and how far out it is (lucid/config.py).
     transport = {"unit": UNIT, "eta_min": ETA_MIN, "origin": ORIGIN, "as_of": taken}
-    scan |= {"taken_at": taken, "patient_id": _patient(runtime), "later_scan": has_baseline, "transport": transport}
+    notes = {**MEDIC_NOTES, "text": photon.notes_line(MEDIC_NOTES), "as_of": taken}  # the medic's notes, simulated the same way
+    scan |= {"taken_at": taken, "patient_id": _patient(runtime), "later_scan": has_baseline, "transport": transport, "medic_notes": notes}
     for stale in (*map(sims_file, physics.LOBES), REVIEW_FILE, REPORT_FILE):  # from an earlier scan on this thread
         await backend.adelete(stale)
     update = await _publish_scan(runtime, scan)
@@ -144,6 +147,7 @@ async def read_scan(runtime: ToolRuntime) -> Command:
         + "\n".join(_scan_rows(scan))
         + ("\nAn earlier scan of this patient is on file." if has_baseline else "\nNo earlier scan of this patient is on file.")
         + f"\nTransport: {UNIT}, ETA about {ETA_MIN} min, {ORIGIN}. It goes in the pre-alert and /report.md."
+        + f"\nMedic's notes: {notes['text']} One line in /report.md, not in the pre-alert; answer the clinician's questions from them."
     )
     accepted = await _accepted_handoff(runtime) if has_baseline else None
     return _reply(runtime, text, **update, null_fit=None, handoff=None, recipient=None, accepted_by=accepted, preview=None, rescans=0)
@@ -198,7 +202,8 @@ async def request_rescan(spots: list[int], reason: str, runtime: ToolRuntime) ->
     if not old or not spots or not set(spots) <= set(weak) or state.get("rescans"):
         return _reply(runtime, f"Not possible: a re-scan is offered once per scan, and only for weak-contact spots (currently {weak or 'none'}).")
     scan = physics.mock_scan(old["case"], rescan=old.get("later_scan", False), reseat=tuple(spots))
-    scan |= {"taken_at": datetime.now(UTC).isoformat(timespec="seconds"), "patient_id": old["patient_id"], "later_scan": old.get("later_scan", False), "transport": old.get("transport")}
+    scan |= {"taken_at": datetime.now(UTC).isoformat(timespec="seconds"), "patient_id": old["patient_id"], "later_scan": old.get("later_scan", False), "transport": old.get("transport"),
+             "medic_notes": old.get("medic_notes")}
     for stale in (*map(sims_file, physics.LOBES), REVIEW_FILE):  # results for the old readings no longer count
         await backend.adelete(stale)
     update = await _publish_scan(runtime, scan)
@@ -471,7 +476,8 @@ async def _send_rescan_update(runtime: ToolRuntime, who: dict, result: dict, bas
             photon.HANDOFFS_NS,
             thread_id,
             {**{k: rec[k] for k in ("patient_id", "to", "space_id", "agent_user_id", "reply")}, "thread_id": thread_id, "sent_at": sent_at, "message": text,
-             "report": report, "transport": (runtime.state.get("reading") or {}).get("transport"), "status": "sent", "messages": [msg], "call": None,
+             "report": report, "transport": (runtime.state.get("reading") or {}).get("transport"),
+             "medic_notes": (runtime.state.get("reading") or {}).get("medic_notes"), "status": "sent", "messages": [msg], "call": None,
              "simulated": False, "update_of": who["thread_id"]},
         )
     handoff = {"to": to, "message": text, "report": report, "sent_at": sent_at, "simulated": False, "channel": "imessage", "status": "sent", "reply": rec.get("reply"), "kind": "update"}
@@ -640,6 +646,7 @@ async def _prealert_imessage(runtime: ToolRuntime, message: str, report: str, se
         "message": text,
         "report": report,
         "transport": transport,
+        "medic_notes": (state.get("reading") or {}).get("medic_notes"),
         "status": "no_one_on_call",
         "messages": [],
         "reply": None,
