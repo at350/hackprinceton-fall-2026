@@ -16,7 +16,7 @@ export function LogoMark({ size = 22 }: { size?: number }) {
 
 export function Logo() {
   return (
-    <div className="flex items-center gap-2.5 text-text">
+    <div className="flex shrink-0 items-center gap-2.5 text-text">
       <LogoMark />
       <span className="font-display text-[22px] font-semibold leading-none tracking-[-0.04em]">{PRODUCT_NAME}</span>
     </div>

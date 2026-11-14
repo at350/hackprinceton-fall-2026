@@ -36,7 +36,7 @@ function Elapsed() {
     s.scanStartedAt === null ? null : Math.floor(((s.scanEndedAt ?? s.t) - s.scanStartedAt) / 1000),
   );
   return (
-    <span className="flex items-center gap-1.5 text-[14px] text-text" title="Scan time">
+    <span className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[14px] text-text" title="Scan time">
       <IconClock size={14} className="text-muted" />
       {sec === null ? "--:--" : formatClock(sec * 1000)}
     </span>
@@ -77,7 +77,7 @@ function ViewSwitch() {
     { id: "trace", label: "Agent trace", Icon: IconWorkflow },
   ];
   return (
-    <div role="tablist" className="absolute top-1/2 left-1/2 flex -translate-x-1/2 -translate-y-1/2 gap-0.5 rounded-[10px] bg-[rgba(0,0,0,0.3)] p-1">
+    <div role="tablist" className="flex gap-0.5 rounded-[10px] bg-[rgba(0,0,0,0.3)] p-1">
       {items.map(({ id, label, Icon }) => (
         <button
           key={id}
@@ -85,12 +85,15 @@ function ViewSwitch() {
           role="tab"
           aria-selected={view === id}
           onClick={() => demo.setView(id)}
-          className={`flex h-8 items-center gap-1.5 rounded-[7px] px-3 text-[13px] font-medium transition-colors duration-150 ${
+          aria-label={label}
+          title={label}
+          className={`flex h-8 items-center gap-1.5 whitespace-nowrap rounded-[7px] px-3 text-[13px] font-medium transition-colors duration-150 ${
             view === id ? "bg-[rgba(255,255,255,0.12)] text-text" : "text-muted hover:text-text"
           }`}
         >
           <Icon size={15} />
-          {label}
+          {/* Icons only on narrow screens. */}
+          <span className="hidden min-[1280px]:inline">{label}</span>
         </button>
       ))}
     </div>
@@ -108,15 +111,20 @@ export function Header() {
       className="relative z-20 flex h-14 shrink-0 items-center gap-3"
     >
       {/* Delta: one long translucent nav pill. */}
-      <div className="glass raised flex h-14 flex-1 items-center gap-6 rounded-full pl-5 pr-2">
-        <Logo />
-        <span className="h-5 w-px bg-line" />
-        <DeviceStatusChip />
+      {/* Three columns so the centred view switch can never overlap either side. */}
+      <div className="glass raised grid h-14 min-w-0 flex-1 grid-cols-[1fr_auto_1fr] items-center gap-4 rounded-full pl-5 pr-2">
+        <div className="flex min-w-0 items-center gap-5">
+          <Logo />
+          <span className="h-5 w-px shrink-0 bg-line" />
+          <span className="min-w-0 truncate">
+            <DeviceStatusChip />
+          </span>
+        </div>
         <ViewSwitch />
-        <div className="ml-auto flex items-center gap-5">
+        <div className="flex min-w-0 items-center justify-end gap-5">
           <Elapsed />
-          <span className="h-5 w-px bg-line" />
-          <span className="text-[13px] text-muted">
+          <span className="hidden h-5 w-px bg-line min-[1180px]:block" />
+          <span className="hidden whitespace-nowrap text-[13px] text-muted min-[1180px]:inline">
             {formatClock(sec * 1000)} / {formatClock(DEMO_LENGTH_MS)}
           </span>
           <button
