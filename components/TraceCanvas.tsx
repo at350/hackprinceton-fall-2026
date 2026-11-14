@@ -58,7 +58,7 @@ const AGENT_PORTS = [
   { id: "tool", label: "Tool", dx: 192 },
 ];
 
-const ICON: Record<string, ComponentType<SVGProps<SVGSVGElement> & { size?: number }>> = {
+export const NODE_ICON: Record<string, ComponentType<SVGProps<SVGSVGElement> & { size?: number }>> = {
   device: IconUsb,
   spots: IconTarget,
   map: IconLayers,
@@ -160,7 +160,7 @@ function RunBorder({ box, slow }: { box: Box; slow: boolean }) {
 function NodeView({ node, selected, onSelect }: { node: TraceNode; selected: boolean; onSelect: () => void }) {
   const box = L[node.id];
   if (!box) return null;
-  const Icon = ICON[node.id] ?? IconRobot;
+  const Icon = NODE_ICON[node.id] ?? IconRobot;
   const success = node.status === "success";
   const error = node.status === "error";
   const radius =
