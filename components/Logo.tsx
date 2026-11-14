@@ -9,7 +9,7 @@ export function Logo() {
         <path d="M11 1.2c4.8.4 8 4.8 8 10.8s-3.2 10.4-8 10.8Z" fill="var(--text)" fillOpacity="0.35" />
         <circle cx="4.6" cy="12" r="1.9" fill="var(--bg)" />
       </svg>
-      <span className="text-[22px] font-semibold leading-none tracking-[-0.045em]">{PRODUCT_NAME}</span>
+      <span className="font-display text-[22px] font-semibold leading-none tracking-[-0.04em]">{PRODUCT_NAME}</span>
     </div>
   );
 }

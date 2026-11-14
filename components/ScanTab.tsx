@@ -24,7 +24,7 @@ function Verdict({ scan }: { scan: ScanUpdate | null }) {
           style={{ color: s?.color ?? "var(--muted)" }}
         >
           {s ? <s.Icon size={36} strokeWidth={1.5} /> : <IconClock size={36} strokeWidth={1.5} />}
-          <span className="whitespace-nowrap text-[clamp(40px,3.9vw,56px)] font-medium leading-none tracking-[-0.05em]">
+          <span className="font-display whitespace-nowrap text-[clamp(40px,3.9vw,56px)] font-medium leading-none tracking-[-0.045em]">
             {s?.label ?? "Awaiting scan"}
           </span>
         </motion.h1>

@@ -42,6 +42,7 @@
   --color-line-strong: var(--line-strong);
   --color-raised: var(--raised);
   --font-sans: var(--font-switzer), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-geist), var(--font-switzer), ui-sans-serif, sans-serif;
 }
 
 html,

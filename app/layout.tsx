@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Geist } from "next/font/google";
 import localFont from "next/font/local";
 import { PRODUCT_NAME } from "@/lib/config";
 import "./globals.css";
@@ -14,6 +15,10 @@ const switzer = localFont({
   display: "swap",
 });
 
+// Geist for headlines (the verdict and wordmark), the pairing Alpine Bio uses
+// over Switzer text. next/font downloads it at build time and serves it locally.
+const geist = Geist({ subsets: ["latin"], weight: ["500", "600"], variable: "--font-geist", display: "swap" });
+
 export const metadata: Metadata = {
   title: `${PRODUCT_NAME} · Bleed screening`,
   description: "Handheld brain-bleed screener dashboard",
@@ -21,7 +26,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${switzer.variable} h-full antialiased`}>
+    <html lang="en" className={`${switzer.variable} ${geist.variable} h-full antialiased`}>
       <body className="h-full overflow-hidden">{children}</body>
     </html>
   );
