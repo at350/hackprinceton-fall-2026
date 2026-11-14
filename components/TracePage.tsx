@@ -33,7 +33,8 @@ const STATUS: Record<TraceNode["status"], { label: string; color: string; icon: 
 };
 
 const TONE = { primary: "var(--primary)", bleed: "var(--bleed-text)" };
-const BIG = "font-display text-[42px] font-medium leading-[1.04] tracking-[-0.045em]";
+// 42px at full panel width, smaller as the panel narrows so short verdicts stay on one line.
+const BIG = "font-display text-[clamp(34px,2.9vw,42px)] font-medium leading-[1.04] tracking-[-0.045em]";
 
 /** The brain render with one hypothesis's heat, as on the simulation cards. */
 function BrainThumb({ map, size }: { map: number[][]; size: number }) {

@@ -92,7 +92,10 @@ function span(t: number, start: number, end: number | null): Pick<TraceNode, "st
 const best = (sims: Simulation[]) =>
   sims.filter((x) => x.status === "done").reduce<Simulation | null>((a, b) => (!a || b.score > a.score ? b : a), null);
 
-const hypothesis = (x: Simulation) => `${TYPE[x.type]}, ${x.region}, ${x.volume_ml} mL`;
+// Non-breaking spaces keep "22 mL" and "L temporal" on one line.
+const ml = (v: number) => `${v}\u00a0mL`;
+const place = (region: string) => region.replace(/^([LR]) /, "$1\u00a0");
+const hypothesis = (x: Simulation) => `${TYPE[x.type]}, ${place(x.region)}, ${ml(x.volume_ml)}`;
 
 function plan(steps: AgentStep[], waiting: boolean): TraceFold | undefined {
   const todos = steps.filter((x) => x.kind === "todo");
@@ -188,15 +191,15 @@ export function deriveTrace(s: DashState): Trace {
             hero: { kind: "spots", map: scan?.map ?? null, spots: s.spots, current: s.currentSpot, weak },
             sentence:
               spotsSpan.status === "success"
-                ? `All 8 spots read${highest ? `; ${highest.name} reads highest` : ""}.`
+                ? `All 8 spots read${highest ? `; ${place(highest.name)} reads highest` : ""}.`
                 : current
-                  ? `${spotsDone} of 8 spots read; now on ${current.name}.`
+                  ? `${spotsDone} of 8 spots read; now on ${place(current.name)}.`
                   : `${spotsDone} of 8 spots read.`,
           },
   });
 
   const mapSpan = span(t, T.firstMapAt, scanned ? T.scanEnd : null);
-  const where = stated && scan.region && scan.region !== "None" ? `, peaking at ${scan.region}${scan.volume_ml ? `, about ${scan.volume_ml} mL` : ""}` : "";
+  const where = stated && scan.region && scan.region !== "None" ? `, peaking at ${place(scan.region)}${scan.volume_ml ? `, about ${ml(scan.volume_ml)}` : ""}` : "";
   const map = node({
     id: "map",
     kind: "step",
@@ -222,7 +225,7 @@ export function deriveTrace(s: DashState): Trace {
   const agentStatus: TraceStatus = waiting ? "waiting" : agentRunning ? "running" : s.steps.length ? "success" : "idle";
   const finding =
     stated && scan.status === "bleed"
-      ? `${top && top.region === scan.region ? `${TYPE[top.type]} bleed` : "Bleed"} at ${scan.region}${scan.volume_ml ? `, about ${scan.volume_ml} mL` : ""}.`
+      ? `${top && top.region === scan.region ? `${TYPE[top.type]} bleed` : "Bleed"} at ${place(scan.region)}${scan.volume_ml ? `, about ${ml(scan.volume_ml)}` : ""}.`
       : null;
   const tested = simsDone ? `Tested ${simsDone} bleed hypotheses with ${new Set(done.map((x) => x.agent)).size} region agents.` : null;
   const runningTodo = todos.find((x) => x.state === "running");
@@ -244,7 +247,7 @@ export function deriveTrace(s: DashState): Trace {
           }
         : {
             hero: stated ? { kind: "verdict", status: scan.status } : waiting ? { kind: "statement", text: approval.title ?? approval.action, size: "question" } : verdict ? { kind: "verdict", status: verdict } : null,
-            sentence: finding ?? (waiting && top && !stated ? `Best fit so far: ${hypothesis(top)}.` : tested ?? "The run is over."),
+            sentence: finding ?? (waiting && top && !stated ? `${TYPE[top.type]} bleed at ${place(top.region)}, about ${ml(top.volume_ml)}, fits best.` : tested ?? "The run is over."),
           };
   const agent = node({
     id: "agent",
@@ -351,7 +354,7 @@ export function deriveTrace(s: DashState): Trace {
               hero: lead ? { kind: "fit", map: lead.map, label: finished ? "Best fit" : "Best so far", value: lead.score.toFixed(2) } : null,
               sentence:
                 finished && lead
-                  ? `${TYPE[lead.type]} at ${lead.region}, ${lead.volume_ml} mL, fits best of the ${mine.length} it tested.`
+                  ? `${TYPE[lead.type]} at ${place(lead.region)}, ${ml(lead.volume_ml)}, fits best of the ${mine.length} it tested.`
                   : a.done
                     ? `Tested ${a.done} of ${mine.length} hypotheses.`
                     : `Testing ${mine.length} bleed hypotheses.`,
@@ -382,7 +385,7 @@ export function deriveTrace(s: DashState): Trace {
       ranked && top
         ? {
             hero: { kind: "fit", map: top.map, label: "Best fit", value: top.score.toFixed(2) },
-            sentence: `${TYPE[top.type]} bleed at ${top.region}, about ${top.volume_ml} mL, ranks first of ${s.sims.length}.`,
+            sentence: `${TYPE[top.type]} bleed at ${place(top.region)}, about ${ml(top.volume_ml)}, ranks first of ${s.sims.length}.`,
           }
         : rankSpan.status === "running"
           ? { hero: null, sentence: "Ranking the scored hypotheses." }
