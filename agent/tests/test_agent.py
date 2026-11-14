@@ -119,11 +119,23 @@ def test_ids_are_normalised():
 
 def test_todos_follow_the_tool_calls():
     todos = [{"content": c, "status": "pending"} for c in "abcde"]
-    step = lambda *names: TodoProgress().after_model({"todos": todos, "messages": [AIMessage("", tool_calls=[{"name": n, "args": {}, "id": n} for n in names])]}, None)  # noqa: E731
+    sent = []
+    runtime = SimpleNamespace(stream_writer=sent.append)
+
+    def step(*names, have=todos):
+        msg = AIMessage("", tool_calls=[{"name": n, "args": {"todos": todos} if n == "write_todos" else {}, "id": n} for n in names])
+        return TodoProgress().after_model({"todos": have, "messages": [msg]}, runtime)
+
     assert [t["status"] for t in step("task", "fit_score")["todos"]] == ["completed", "completed", "in_progress", "pending", "pending"]
     assert [t["status"] for t in step("submit_result")["todos"]][3:] == ["completed", "in_progress"]
-    assert step("write_todos", "read_scan") is None  # the lead is writing the list itself this turn
     assert step("read_file") is None
+    # When the lead writes the list in the same turn, the dashboard is told but state is left to write_todos.
+    sent.clear()
+    assert step("write_todos", "read_scan", "plan_hypotheses", have=[]) is None
+    assert [t["status"] for t in sent[-1]["todos"]][:2] == ["completed", "in_progress"]
+    # After a re-scan the simulations run again; the plan does not rewind.
+    late = [{"content": c, "status": "completed" if i < 4 else "in_progress"} for i, c in enumerate("abcde")]
+    assert step("task", have=late) is None
 
 
 if __name__ == "__main__":

@@ -64,14 +64,22 @@ class TodoProgress(AgentMiddleware):
     STEP = {"plan_hypotheses": 1, "task": 2, "rank_fits": 3, "request_rescan": 4, "submit_result": 4, "send_prealert": 4}
 
     def after_model(self, state, runtime):
-        todos = state.get("todos") or []
-        calls = [c["name"] for c in getattr(state["messages"][-1], "tool_calls", None) or []]
-        steps = [self.STEP[c] for c in calls if c in self.STEP]
-        if not todos or not steps or "write_todos" in calls:
+        last = state["messages"][-1]
+        calls = getattr(last, "tool_calls", None) or []
+        names = [c["name"] for c in calls]
+        steps = [self.STEP[n] for n in names if n in self.STEP]
+        # In turn 1 the list is still inside the write_todos call that creates it.
+        written = next((c["args"].get("todos") for c in calls if c["name"] == "write_todos"), None)
+        todos = written if isinstance(written, list) and written else state.get("todos") or []
+        if not todos or not steps:
             return None
-        at = min(max(steps), len(todos) - 1)
+        # Forward only: after a re-scan the simulations run again, but the plan does not rewind.
+        reached = max((i for i, t in enumerate(todos) if t.get("status") != "pending"), default=0)
+        at = min(max(*steps, reached), len(todos) - 1)
         new = [{**t, "status": "completed" if i < at else "in_progress" if i == at else "pending"} for i, t in enumerate(todos)]
-        return {"todos": new} if new != todos else None
+        # The tools of this turn may run for a while (the region agents); tell the dashboard now.
+        runtime.stream_writer({"type": "todos", "todos": new})
+        return {"todos": new} if not written and new != state.get("todos") else None
 
 
 class CloseOut(AgentMiddleware):

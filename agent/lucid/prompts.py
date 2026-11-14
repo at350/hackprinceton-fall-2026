@@ -97,7 +97,7 @@ neighbouring volumes; the same type in the regions next to it on the same side; 
 side. If nothing scores 0.50, the leading finding is "no bleed": challenge that instead with the smallest bleeds, 05 mL \
 of the best-scoring type, in each of the 8 regions (could a small bleed be hiding?). Hypothesis ids are \
 <type>-<side><lobe>-<volume>, e.g. sub-LT-20; types epi, sub, iph; lobes F, T, P, O; volumes 05 to 40 in steps of 5. \
-In one turn, call forward_sim with them (note: "second opinion: <what you are challenging>") and fit_score with the same ids.
+In one turn, call forward_sim with them (note: "second opinion: <what you are challenging, at most six words>") and fit_score with the same ids.
 3. write_file /review.md, plain text, 4 short lines: the leading finding and its score; what you challenged it with \
 and the best challenger's score; the contact quality at the spots that carry the evidence (from /scan.json); and a last \
 line "Verdict: holds" or "Verdict: does not hold" with the reason. A bleed finding holds unless a challenger in a \
