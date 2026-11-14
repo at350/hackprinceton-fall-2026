@@ -8,9 +8,9 @@ import json
 from functools import lru_cache
 from pathlib import Path
 
-from .headmodel import forward, null_reading
+from .headmodel import field, forward, mesh_geometry, null_reading
 from .geometry import BLEED_TYPES, LOBES, REGION_ANGLE, SPOT_NAMES, VOLUMES, hypothesis_map
-from .scans import MOCK_CASES, fit, likelihood_map, mock_scan, spot_peaks
+from .scans import MOCK_CASES, fit, likelihood_map, mock_scan, residuals, spot_peaks
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 TABLE_PATH = DATA_DIR / "sim_table.json"
@@ -76,9 +76,12 @@ __all__ = [
     "parse_hypothesis_id",
     "all_hypotheses",
     "forward",
+    "field",
+    "mesh_geometry",
     "lookup",
     "null_reading",
     "fit",
+    "residuals",
     "hypothesis_map",
     "likelihood_map",
     "spot_peaks",

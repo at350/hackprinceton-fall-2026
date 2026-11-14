@@ -144,6 +144,11 @@ class HeadModel:
             z[i] = u[pair[0]] - u[pair[1]]
         return z
 
+    def potentials(self, sigma_elem: np.ndarray) -> np.ndarray:
+        """Node potentials for each spot's injection: (8, n_nodes), unit current."""
+        self.fwd.assemble_pde(sigma_elem)
+        return np.array([self.fwd.solve(np.array([(2 * i - 1) % N_EL, (2 * i + 1) % N_EL])) for i in range(N_SPOTS)])
+
     def raw(self, type: str, angle: float, volume_ml: float) -> tuple[np.ndarray, np.ndarray]:
         """Uncalibrated signals: (20*log10(Z/Z0) per spot, NIR blood integral per spot)."""
         blood = self.blood_mask(type, angle, volume_ml)
@@ -183,3 +188,52 @@ def forward(type: str, region: str, volume_ml: float) -> dict:
 def null_reading() -> dict:
     """Healthy head."""
     return {"coil_db": [COIL_HEALTHY_DB] * N_SPOTS, "nir": [NIR_HEALTHY] * N_SPOTS}
+
+
+def mesh_geometry() -> dict:
+    """The head mesh for drawing: nodes, triangles, the healthy tissue of every triangle,
+    and which electrode pair each scan spot drives."""
+    m = model()
+    names = {v: k for k, v in SIGMA.items()}
+    healthy = m.sigma_pts.mean(axis=1)
+    # A triangle straddling two layers takes the layer of its centre sample.
+    tissue = [names[float(v)] for v in m.sigma_pts[:, 3]]
+    return {
+        "nodes": np.round(m.mesh.node[:, :2], 4).tolist(),
+        "triangles": m.mesh.element.tolist(),
+        "tissue": tissue,
+        "sigma": np.round(healthy, 4).tolist(),
+        "conductivity": SIGMA,
+        "electrodes": list(range(N_EL)),
+        "spot_pairs": [[(2 * i - 1) % N_EL, (2 * i + 1) % N_EL] for i in range(N_SPOTS)],
+    }
+
+
+@lru_cache(maxsize=1)
+def _healthy_potentials() -> np.ndarray:
+    m = model()
+    return m.potentials(m.sigma_pts.mean(axis=1))
+
+
+def field(type: str, region: str, volume_ml: float) -> dict:
+    """What the solver computes for one hypothesis, for the dashboard's detail view.
+
+    blood: fraction of each triangle that is blood (0-1).
+    sigma: conductivity of each triangle with the bleed in place.
+    change: per spot, how much the bleed shifts the potential at every node compared
+        with the healthy head, scaled to -1..1 over all 8 spots. This is the disturbance
+        the device picks up.
+    """
+    m = model()
+    blood = m.blood_mask(type, REGION_ANGLE[region], float(volume_ml))
+    sigma = np.where(blood, SIGMA["blood"], m.sigma_pts).mean(axis=1)
+    du = m.potentials(sigma) - _healthy_potentials()
+    scale = float(np.abs(du).max()) or 1.0
+    z = np.array([du[i, a] - du[i, b] for i, (a, b) in enumerate(mesh_geometry()["spot_pairs"])])
+    return {
+        "blood": np.round(blood.mean(axis=1), 3).tolist(),
+        "sigma": np.round(sigma, 4).tolist(),
+        "change": np.round(du / scale, 3).tolist(),
+        "change_scale_v": scale,
+        "impedance_change_pct": np.round(100 * z / m.z0, 3).tolist(),
+    }

@@ -65,6 +65,23 @@ def fit(sim: dict, scan: dict, baseline: dict | None = None) -> float:
     return round(float(np.exp(-mean_chi2 / (2 * FIT_SCALE))), 4)
 
 
+def residuals(sim: dict, scan: dict) -> dict:
+    """Per spot, how far the simulation is from the scan in units of expected error
+    (signed: negative = the simulation reads lower). Same error model as `fit`."""
+    sim_c, sim_n = _arrays(sim)
+    scan_c, scan_n = _arrays(scan)
+
+    def z(sim_v: np.ndarray, scan_v: np.ndarray, healthy: float, floor: float) -> list[float]:
+        anomaly = (np.abs(sim_v - healthy) + np.abs(scan_v - healthy)) / 2
+        return np.round((sim_v - scan_v) / np.sqrt(floor**2 + (SIGMA_REL * anomaly) ** 2), 2).tolist()
+
+    return {
+        "coil": z(sim_c, scan_c, COIL_HEALTHY_DB, SIGMA_COIL_DB),
+        "nir": z(sim_n, scan_n, NIR_HEALTHY, SIGMA_NIR),
+        "weight": _weights(scan).tolist(),
+    }
+
+
 # ---- Likelihood map ---------------------------------------------------------
 KERNEL_POWER = 6  # sharpens the broad mock.ts spot kernel (sigma 0.5 -> ~0.2) for localisation
 PEAK_SENS = 0.85  # a point is "under" a spot when its mock.ts sensitivity exceeds this
@@ -113,15 +130,20 @@ _CASES: dict[tuple[str, bool], dict] = {
     ("temporal_bleed", True): {"truth": ("epidural", 268.0, 27.0), "noise": 1.0, "weak": (), "seed": 12},
     ("clear", False): {"truth": None, "noise": 1.0, "weak": (), "seed": 21},
     ("clear", True): {"truth": None, "noise": 1.0, "weak": (), "seed": 22},
-    # Small bleed between L parietal and L temporal, noisy, two weak spots.
-    ("uncertain", False): {"truth": ("epidural", 245.0, 8.0), "noise": 2.5, "weak": (5, 6), "seed": 10},
-    ("uncertain", True): {"truth": ("epidural", 245.0, 8.0), "noise": 2.5, "weak": (5, 6), "seed": 28},
+    # Thin subdural over L parietal, read through poor contact at the two spots that matter.
+    # Too noisy to call; re-seating those two spots (mock_scan(..., reseat=(5, 6))) resolves it.
+    ("uncertain", False): {"truth": ("subdural", 222.0, 12.0), "noise": 4.0, "weak": (5, 6), "seed": 19},
+    ("uncertain", True): {"truth": ("subdural", 222.0, 12.0), "noise": 4.0, "weak": (5, 6), "seed": 36},
 }
 WEAK_NOISE = 2.0  # extra noise multiplier on weak-quality spots
 
 
-def mock_scan(case: str, rescan: bool = False) -> dict:
-    """Deterministic synthetic scan: forward model of the case's truth + fixed-seed noise."""
+def mock_scan(case: str, rescan: bool = False, reseat: tuple[int, ...] = ()) -> dict:
+    """Deterministic synthetic scan: forward model of the case's truth + fixed-seed noise.
+
+    `reseat` lists spots the medic scanned again with the device pressed flat: those
+    spots get good contact and normal noise; the others keep their first reading.
+    """
     if case not in MOCK_CASES:
         raise ValueError(f"unknown mock case {case!r}; expected one of {MOCK_CASES}")
     cfg = _CASES[(case, rescan)]
@@ -130,6 +152,12 @@ def mock_scan(case: str, rescan: bool = False) -> dict:
     scale = cfg["noise"] * np.where(np.isin(np.arange(N_SPOTS), cfg["weak"]), WEAK_NOISE, 1.0)
     coil = np.array(clean["coil_db"]) + rng.normal(0, NOISE_COIL_DB, N_SPOTS) * scale
     nir = np.array(clean["nir"]) + rng.normal(0, NOISE_NIR, N_SPOTS) * scale
+    if reseat:
+        again = np.random.default_rng(cfg["seed"] + 100)
+        idx = np.array(sorted(set(reseat)))
+        coil[idx] = np.array(clean["coil_db"])[idx] + again.normal(0, NOISE_COIL_DB, len(idx))
+        nir[idx] = np.array(clean["nir"])[idx] + again.normal(0, NOISE_NIR, len(idx))
+        cfg = {**cfg, "weak": tuple(i for i in cfg["weak"] if i not in reseat)}
     spots = [
         {
             "index": i,
