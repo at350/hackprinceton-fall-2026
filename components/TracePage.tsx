@@ -222,11 +222,11 @@ function FoldBody({ fold }: { fold: TraceFold }) {
         <li key={x.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-1.5 text-[12.5px]">
           <span className={`truncate ${x.score === null ? "text-muted" : "text-text"}`}>{x.label}</span>
           <span className={x.best ? "text-primary" : "text-text"}>{x.score?.toFixed(2)}</span>
-          <span className="relative col-span-2 h-1 rounded-[2px] bg-[rgba(255,255,255,0.08)]">
-            {x.score !== null && (
+          {x.score !== null && (
+            <span className="relative col-span-2 h-1 rounded-[2px] bg-[rgba(255,255,255,0.08)]">
               <i className="absolute inset-y-0 left-0 rounded-[2px]" style={{ width: `${x.score * 100}%`, background: x.best ? "var(--primary)" : "rgba(237,238,240,0.6)" }} />
-            )}
-          </span>
+            </span>
+          )}
         </li>
       ))}
     </ul>

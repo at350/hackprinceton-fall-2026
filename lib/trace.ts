@@ -227,6 +227,7 @@ export function deriveTrace(s: DashState): Trace {
   const tested = simsDone ? `Tested ${simsDone} bleed hypotheses with ${new Set(done.map((x) => x.agent)).size} region agents.` : null;
   const runningTodo = todos.find((x) => x.state === "running");
   const runningTool = [...s.steps].reverse().find((x) => x.kind === "tool" && x.state === "running");
+  const simulating = s.agents.filter((a) => a.state === "running").length;
   // After a live rejection the scan stays pending: nothing was recorded.
   const verdict: ScanStatus | null = !scan ? null : scan.status === "pending" ? (approval?.state === "rejected" ? "rejected" : null) : scan.status;
   const agentPanel: TracePanel =
@@ -235,7 +236,11 @@ export function deriveTrace(s: DashState): Trace {
       : agentStatus === "running"
         ? {
             hero: runningTodo ? { kind: "statement", text: runningTodo.label, size: "question" } : null,
-            sentence: runningTool ? `${runningTool.label}${runningTool.detail ? `, ${runningTool.detail}` : ""}.` : `On step ${todos.indexOf(runningTodo!) + 1} of ${todos.length}.`,
+            sentence: simulating
+              ? `${simulating} region ${simulating === 1 ? "agent is" : "agents are"} testing ${s.sims.length} bleed hypotheses.`
+              : runningTool
+                ? `${runningTool.label}${runningTool.detail ? `, ${runningTool.detail}` : ""}.`
+                : `On step ${todos.indexOf(runningTodo!) + 1} of ${todos.length}.`,
           }
         : {
             hero: stated ? { kind: "verdict", status: scan.status } : waiting ? { kind: "statement", text: approval.title ?? approval.action, size: "question" } : verdict ? { kind: "verdict", status: verdict } : null,
@@ -304,7 +309,7 @@ export function deriveTrace(s: DashState): Trace {
       simsSpan.status === "idle"
         ? { hero: null, sentence: "Runs once the scan is complete.", quiet: true }
         : {
-            hero: { kind: "number", label: "Simulated", value: simsSpan.status === "success" ? `${s.sims.length}` : `${simsDone} of ${s.sims.length}` },
+            hero: !simsDone ? null : { kind: "number", label: "Simulated", value: simsSpan.status === "success" ? `${s.sims.length}` : `${simsDone} of ${s.sims.length}` },
             sentence: `${simsSpan.status === "success" ? "Predicted" : "Predicting"} what the 8 spots would read for each bleed hypothesis.`,
           },
   });
@@ -347,7 +352,9 @@ export function deriveTrace(s: DashState): Trace {
               sentence:
                 finished && lead
                   ? `${TYPE[lead.type]} at ${lead.region}, ${lead.volume_ml} mL, fits best of the ${mine.length} it tested.`
-                  : `Tested ${a.done} of ${mine.length} hypotheses.`,
+                  : a.done
+                    ? `Tested ${a.done} of ${mine.length} hypotheses.`
+                    : `Testing ${mine.length} bleed hypotheses.`,
               fold: mine.length
                 ? {
                     kind: "hypotheses",
@@ -384,7 +391,14 @@ export function deriveTrace(s: DashState): Trace {
 
   // ---- The medic and the hand-off ----
 
-  const lower = (x: string) => x.charAt(0).toLowerCase() + x.slice(1);
+  // What the medic was asked, as the object of "approved" or "rejected".
+  const asked = !approval
+    ? ""
+    : /^send pre-alert/i.test(approval.action)
+      ? "the pre-alert"
+      : /^mark this scan (.+?)\??$/i.exec(approval.action)?.[1] ?? `“${approval.action.replace(/\?$/, "")}”`;
+  // The card's detail can run to several sentences; the panel keeps the first.
+  const firstSentence = (x: string) => x.split(/(?<=[.!?])\s+(?=[A-Z])/)[0];
   const approvalNode = node({
     id: "approval",
     kind: "wait",
@@ -396,14 +410,14 @@ export function deriveTrace(s: DashState): Trace {
     panel: !approval
       ? { hero: null, sentence: "Asks the medic once there is a result.", quiet: true }
       : approval.state === "pending"
-        ? { hero: { kind: "statement", text: approval.title ?? approval.action, size: "question" }, sentence: approval.detail ?? "", actions: true }
+        ? { hero: { kind: "statement", text: approval.title ?? approval.action, size: "question" }, sentence: firstSentence(approval.detail ?? ""), actions: true }
         : approval.state === "approved"
           ? rescanAsk
             ? { status: "Re-scanned", hero: { kind: "statement", text: "Re-scanned", tone: "primary", icon: "check" }, sentence: "The medic scanned the spots again." }
-            : { status: "Approved", hero: { kind: "statement", text: "Approved", tone: "primary", icon: "check" }, sentence: `The medic approved: ${lower(approval.action)}.` }
+            : { status: "Approved", hero: { kind: "statement", text: "Approved", tone: "primary", icon: "check" }, sentence: `The medic approved ${asked}.` }
           : rescanAsk
             ? { status: "Skipped", hero: { kind: "statement", text: "Skipped", tone: "bleed", icon: "x" }, sentence: "The medic skipped the re-scan." }
-            : { hero: { kind: "statement", text: "Rejected", tone: "bleed", icon: "x" }, sentence: `The medic rejected: ${lower(approval.action)}.` },
+            : { hero: { kind: "statement", text: "Rejected", tone: "bleed", icon: "x" }, sentence: `The medic rejected ${asked}.` },
   });
 
   const sentTo = s.steps.find((x) => x.label === "Sending pre-alert")?.detail;
