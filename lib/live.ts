@@ -81,6 +81,7 @@ export interface LiveValues {
   spots?: ScanSpot[];
   sims?: SimPatch[];
   reading?: ScanReading | null;
+  baseline?: { taken_at?: string } | null;
   preview?: Preview | null;
   handoff?: Handoff | null;
 }
@@ -267,7 +268,7 @@ export class LiveStore {
 
   // Latest wire data, and the refs already applied from `values`.
   private wire: { messages: WireMessage[]; isLoading: boolean } = { messages: [], isLoading: false };
-  private seen: Partial<Record<"scan" | "spots" | "sims" | "reading" | "preview" | "handoff", unknown>> = {};
+  private seen: Partial<Record<"scan" | "spots" | "sims" | "reading" | "baseline" | "preview" | "handoff", unknown>> = {};
   private todos: NonNullable<LiveValues["todos"]> = [];
   private rawScan: ScanUpdate | null = null;
   private preview: Preview | null = null;
@@ -408,6 +409,11 @@ export class LiveStore {
     if (v.reading && v.reading !== this.seen.reading) {
       this.seen.reading = v.reading;
       this.set({ reading: v.reading });
+    }
+    // recall_baseline's answer: null when this patient has none on file.
+    if (v.baseline !== undefined && v.baseline !== this.seen.baseline) {
+      this.seen.baseline = v.baseline;
+      this.set({ baseline: v.baseline });
     }
     if (v.sims?.length && v.sims !== this.seen.sims) {
       this.seen.sims = v.sims;
