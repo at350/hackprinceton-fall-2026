@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { BRAIN_SRC, IMG, drawDimBrain, loadBrain, renderScanned } from "@/lib/brain";
 import { pointAt } from "@/lib/mock";
+import { IconCheck, IconExclamation } from "./icons";
 import type { ScanSpot, ScanUpdate } from "@/lib/types";
 
 // SVG space: map covers [-1, 1]; the view adds room for the spot markers.
@@ -92,17 +93,13 @@ function BrainCanvas({ scan }: { scan: ScanUpdate | null }) {
 function Marker({ spot }: { spot: ScanSpot }) {
   const p = pointAt(spot.angle, MARKER_R);
   const r = 0.062;
-  const icon = (d: string, color: string, w = 2) => (
-    <svg x={p.x - 0.04} y={p.y - 0.04} width={0.08} height={0.08} viewBox="0 0 16 16">
-      <path d={d} fill="none" stroke={color} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
+  const at = { x: p.x - 0.045, y: p.y - 0.045, size: 0.09 };
   switch (spot.state) {
     case "done":
       return (
         <g>
           <circle cx={p.x} cy={p.y} r={r} fill="rgba(20,23,28,0.85)" stroke="rgba(255,255,255,0.22)" strokeWidth={0.005} />
-          {icon("m3.5 8.3 2.8 2.8 6.2-6.2", "var(--text)")}
+          <IconCheck {...at} style={{ color: "var(--text)" }} />
         </g>
       );
     case "current":
@@ -118,7 +115,7 @@ function Marker({ spot }: { spot: ScanSpot }) {
       return (
         <g>
           <circle cx={p.x} cy={p.y} r={r} fill="rgba(20,23,28,0.85)" stroke="var(--uncertain)" strokeWidth={0.007} />
-          {icon("M8 3.5v5.2M8 11.6v.1", "var(--uncertain)", 2.4)}
+          <IconExclamation {...at} style={{ color: "var(--uncertain)" }} />
         </g>
       );
     default:
