@@ -6,7 +6,7 @@ import { pointAt } from "@/lib/mock";
 import { type HeadMesh, type SimSolve, bleedLayer, fieldLayer, loadMesh, loadSolve, tissueLayer } from "@/lib/solver";
 import type { AgentActivity, ScanReading, Simulation } from "@/lib/types";
 import { useDash } from "@/lib/useDash";
-import { IconArrowRight, IconCheck, IconClock, IconTarget } from "./icons";
+import { IconArrowRight, IconCheck, IconClock, IconTarget, IconTool } from "./icons";
 
 const TYPE_LABEL = { epidural: "Epidural", subdural: "Subdural", intraparenchymal: "Intraparenchymal" };
 const PASS_LABEL = { coarse: "Coarse sweep", refine: "Refinement", review: "Second check" };
@@ -275,27 +275,40 @@ function Compare({
 
 // ---- C. What the agent is doing -------------------------------------------
 
-function activityLine(a: AgentActivity) {
+/** One step as Beautiful UI's tool-call row: plain action on the left, the thing it acted on as a chip. */
+function activityRow(a: AgentActivity): { label: string; detail?: string } {
   const n = a.ids?.length ?? 0;
   switch (a.tool) {
-    case null:
-      return a.text ?? "";
     case "read_file":
-      return `Read ${a.path ?? "a file"}`;
+      return { label: "Reading file", detail: a.path ?? undefined };
     case "write_file":
     case "edit_file":
-      return `Wrote ${a.path ?? "a file"}`;
-    case "forward_sim":
-      return `Simulating ${n} ${n === 1 ? "hypothesis" : "hypotheses"}${a.note ? `: ${a.note}` : ""}`;
+      return { label: "Writing result", detail: a.path ?? undefined };
+    case "forward_sim": {
+      const why = a.note?.trim();
+      return { label: why ? `Simulating: ${why}` : "Simulating", detail: String(n) };
+    }
     case "fit_score":
-      return `Scoring ${n}`;
+      return { label: "Scoring fit", detail: String(n) };
     default: {
-      const words = a.tool.replace(/_/g, " ");
-      return words[0].toUpperCase() + words.slice(1);
+      const words = (a.tool ?? "").replace(/_/g, " ");
+      return { label: words ? words[0].toUpperCase() + words.slice(1) : "" };
     }
   }
 }
 
+/** The status glyph from the agent panel: animates while the agent works, holds dim once it is done. */
+function DotGrid({ working }: { working: boolean }) {
+  return (
+    <span className="dot-grid transition-colors duration-300" style={{ color: working ? "var(--primary)" : "var(--muted)" }} aria-hidden>
+      {Array.from({ length: 9 }, (_, i) => (
+        <span key={i} style={working ? undefined : { animation: "none", opacity: 0.3 }} />
+      ))}
+    </span>
+  );
+}
+
+/** Beautiful UI's thinking disclosure, opened: a status row, then the agent's tool calls, then its reply. */
 function AgentLog({ sim }: { sim: Simulation }) {
   const who = sim.by ?? sim.agent;
   const log = useDash((s) => s.activity?.[who]);
@@ -306,23 +319,68 @@ function AgentLog({ sim }: { sim: Simulation }) {
   }, [log?.length]);
 
   const name = who === "skeptic" ? "Skeptic" : `${who[0].toUpperCase()}${who.slice(1)} agent`;
+  const steps = log?.filter((a) => a.tool !== null) ?? [];
+  const reply = log?.filter((a) => a.tool === null).at(-1)?.text;
+  const working = steps.length > 0 && !reply;
+  const pass = PASS_LABEL[sim.pass ?? "coarse"];
   return (
-    <div className="flex min-h-[96px] flex-1 flex-col gap-2">
-      <p className="text-[13.5px] leading-[1.5] text-text">
-        {sim.by ? name : `Waiting for the ${sim.agent} agent`}
-        <span className="text-muted"> · {PASS_LABEL[sim.pass ?? "coarse"]}</span>
-        {sim.note && sim.note.toLowerCase() !== PASS_LABEL[sim.pass ?? "coarse"].toLowerCase() && <span className="line-clamp-2 text-muted">{sim.note}</span>}
-      </p>
-      <div ref={scroller} className="scroll-thin min-h-0 flex-1 overflow-y-auto">
-        {/* Same nesting as the plan's tool calls. Lines about this hypothesis are lit. */}
-        <ul className="ml-[7px] flex flex-col gap-1.5 border-l border-[rgba(255,255,255,0.08)] py-0.5 pl-4 text-[13px] leading-[1.45]">
-          {log?.map((a, i) => (
-            <li key={i} className={a.ids?.includes(sim.id) ? "text-text" : "text-muted opacity-70"}>
-              {activityLine(a)}
-            </li>
-          ))}
-          {!log?.length && <li className="text-muted opacity-70">Nothing yet</li>}
+    <div className="flex min-h-[132px] flex-1 flex-col rounded-[12px] border border-[rgba(255,255,255,0.06)] bg-[rgba(0,0,0,0.18)]">
+      <div className="flex h-11 shrink-0 items-center gap-2.5 px-3">
+        <DotGrid working={working} />
+        <span className="flex min-w-0 flex-col leading-tight">
+          <span className={`truncate text-[13px] font-medium ${working ? "shimmer" : "text-text"}`}>{name}</span>
+          <span className="truncate text-[12px] text-muted">
+            {pass}
+            {!steps.length && ` · Waiting for the ${sim.agent} agent`}
+          </span>
+        </span>
+        {steps.length > 0 && (
+          <span className="ml-auto shrink-0 font-mono text-[12px] text-muted">
+            {steps.length} {steps.length === 1 ? "step" : "steps"}
+          </span>
+        )}
+      </div>
+      <div
+        ref={scroller}
+        className="scroll-thin min-h-0 flex-1 overflow-y-auto border-t border-[rgba(255,255,255,0.06)] px-3 pt-1.5 pb-3"
+      >
+        {/* Steps that ran this hypothesis are lit; the step in flight carries the accent. */}
+        <ul>
+          {steps.map((a, i) => {
+            const row = activityRow(a);
+            const mine = a.ids?.includes(sim.id);
+            const running = working && i === steps.length - 1;
+            return (
+              <motion.li
+                key={i}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, ease: EASE_UI }}
+                className={`flex h-7 items-center gap-2 text-[13px] ${mine || running ? "text-text" : "text-muted"}`}
+              >
+                <IconTool size={13} className={`shrink-0 ${running ? "text-primary" : ""}`} />
+                <span className="truncate" title={row.label}>
+                  {row.label}
+                </span>
+                {row.detail && (
+                  <span className="ml-auto shrink-0 rounded-[6px] bg-[rgba(255,255,255,0.06)] px-1.5 py-0.5 font-mono text-[11.5px] text-muted">
+                    {row.detail}
+                  </span>
+                )}
+              </motion.li>
+            );
+          })}
         </ul>
+        {reply && (
+          <motion.p
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, ease: EASE_UI }}
+            className="mt-2 text-[13.5px] leading-[1.6] text-[rgba(237,238,240,0.92)]"
+          >
+            {reply}
+          </motion.p>
+        )}
       </div>
     </div>
   );
