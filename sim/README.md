@@ -29,12 +29,9 @@ As readings come in:
 
 Honest scope: conductivity, hair and gap, pulse and blood are measured. The folding pattern is the fsaverage template, smoothed in `make_brain.py` for the "average head" stages.
 
-**16 heads view** (`/ensemble.html`, the "16 heads" tab). Sixteen of the 500 simulated heads, each drawn as its own brain:
-- each starts as a faint point cloud, and every finished spot materialises the cortex that spot can see, on all sixteen, with a glowing front where it is forming and a shimmer under the probe;
-- each brain shows its own explanation of the readings: "No bleed", or where its bleed is, how deep and how big, painted on its cortex;
-- when the scan ends (or on "Merge now"), the sixteen fly together, overlap as ghosts and resolve into one brain carrying the merged chance-of-blood map from all 500 heads. The merged map is that average, so the picture is the real computation.
+**Race** (`/race.html`). How sure the scan is, shown on a crowd: 200 simulated patients (100 with bleeds of mixed type, size and place, 100 healthy, all with some handling problems) run through the real pipeline. Each is one line of "chance of bleed" after each spot. The lines grow together, bleed patients (ember) climbing at the pair over their bleed and healthy heads (frost) sinking, and the scan running now is drawn on top, live, with which crowd it is running with. The side panel gives bleeds flagged and false alarms after all ten spots, where every patient ends up, and the flag rate by bleed size and type. Highlight a size or type to dim the rest; hover a line for that patient.
 
-After the scan, **Replay a head** (or click a head's label) plays that one head on its own: it rebuilds spot by spot, showing how its guess changed with each reading. Then, if it has a bleed, it plays a 12-hour untreated forecast: the bleed grows on the cortex and the brain is pushed off the midline.
+The crowd is precomputed: `python -m lucid_ui.make_race` (a few minutes on 8 cores) writes `static/race.json`.
 
 **What if** (`/outlook.html`). One bleed, four ways it could go over the next 12 hours, playing in sync:
 - no treatment;

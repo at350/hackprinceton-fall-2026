@@ -38,9 +38,14 @@ def test_simulated_scan_streams_frames_and_updates():
     assert final["final"] and final["p_bleed"] > 0.9 and final["location"]["side"] == "L"
     assert len(final["sims"]["bleed"]) == 500 and len(final["sims"]["pair_d"]) == 5
     assert len(base64.b64decode(final["cortex"])) == 20484 and final["voxels"]
-    tiles = final["tiles"]
-    assert len(tiles) == 16 and all(t["bleed"] == bool(b) for t, b in zip(tiles, final["sims"]["bleed"]))
-    assert all(len(base64.b64decode(t["cortex"])) == 20484 for t in tiles if t["bleed"])
+
+
+def test_race_data_is_complete():
+    from lucid_ui.make_race import OUT
+
+    race = json.loads(OUT.read_text())
+    assert race["patients"] and all(len(p["curve"]) == 11 for p in race["patients"])
+    assert any(p["bleed"] for p in race["patients"]) and any(not p["bleed"] for p in race["patients"])
 
 
 def test_events_are_strict_json():
