@@ -1,20 +1,4 @@
-/** Framework-free cortex deformation. Coordinates in the source mesh are mm. */
-export interface Hemisphere {
-  vertices: number[];
-  faces: number[];
-  sulc: number[];
-  inflated: number[];
-  blob: number[];
-}
-export interface CortexModel { left: Hemisphere; right: Hemisphere }
-export interface FoldingParameters { folding: number; depth: number }
-export const DEFAULT_FOLDING: Readonly<FoldingParameters> = { folding: 0.5, depth: 1 };
-export const FOLDING_LIMITS = { folding: [0, 1], depth: [0, 2] } as const;
-
-export function clampParameter(value: number, min: number, max: number, fallback: number) {
-  return Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback;
-}
-
+/** Framework-free geometry and scan reveal helpers. */
 /** Area-weighted smooth normals, recomputed on the deformed topology. */
 export function surfaceNormals(positions: ArrayLike<number>, faces: ArrayLike<number>, out: Float32Array = new Float32Array(positions.length)) {
   out.fill(0);

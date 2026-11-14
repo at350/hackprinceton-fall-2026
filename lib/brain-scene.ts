@@ -3,16 +3,10 @@ import { heatRGB } from "@/components/ui";
 import { decodeCortex, CORTEX_URL } from "./brain-model";
 import { heatAttributes, scalpSpot3D } from "./brain-heat";
 import type { ScanUpdate } from "./types";
-import { DEFAULT_FOLDING, scanRevealRadius, surfaceNormals, type CortexModel, type FoldingParameters } from "./brain-geometry";
-
-import { DEFAULT_SEED } from "./brain-anatomy";
+import { scanRevealRadius, surfaceNormals } from "./brain-geometry";
 
 const VIEW = 1.25;
 const vertexShader = `
-  uniform float depth;
-  attribute vec3 delta;
-  attribute vec3 foldNormal;
-  attribute vec3 deepNormal;
   attribute float sulc;
   attribute float heat;
   attribute float before;
@@ -26,18 +20,16 @@ const vertexShader = `
   varying vec3 vPosition;
   varying float vSulc;
   void main() {
-    vec3 n = depth < 1.0 ? mix(normal, foldNormal, depth) : mix(foldNormal, deepNormal, depth - 1.0);
-    vNormal = normalize(normalMatrix * normalize(n));
-    vPosition = position - delta * (depth <= 1.0 ? depth : 1.0 + (depth - 1.0) * 0.2);
+    vNormal = normalize(normalMatrix * normal);
+    vPosition = position;
     vSulc = sulc; vHeat = heat; vBefore = before; vAfter = after; vHead = head;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position - delta * (depth <= 1.0 ? depth : 1.0 + (depth - 1.0) * 0.2), 1.0);
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
 const fragmentShader = `
   uniform sampler2D heatRamp;
   uniform vec3 origin;
   uniform float radius;
-  uniform float depth;
   varying vec3 vNormal;
   varying vec3 vPosition;
   varying float vSulc;
@@ -49,8 +41,8 @@ const fragmentShader = `
     float value = vHeat * coverage;
     float alpha = smoothstep(0.2, 0.65, value) * 0.94;
     vec3 heat = texture2D(heatRamp, vec2(clamp((value - 0.15) / 0.75, 0.0, 1.0), 0.5)).rgb;
-    // Preserve a little surface shading through the hot region as in the render.
-    return mix(cortex * mix(0.20, 1.0, coverage), heat * clamp(dot(cortex, vec3(0.333)) / 0.58, 0.30, 1.0), alpha);
+    // Treat likelihood as a surface tint under the same illumination and cavity.
+    return mix(cortex * mix(0.20, 1.0, coverage), heat * (cortex / vec3(0.58, 0.64, 0.68)), alpha);
   }
   void main() {
     vec3 n = normalize(vNormal);
@@ -58,9 +50,9 @@ const fragmentShader = `
     vec3 rim = normalize(vec3(0.8, -0.4, 0.5));
     float light = 0.36 + 0.66 * max(dot(n, key), 0.0) + 0.06 * max(dot(n, rim), 0.0);
     float groove = smoothstep(0.04, 0.72, vSulc);
-    float ao = 1.0 - pow(groove, 1.15) * (0.22 + min(depth, 1.0) * 0.66);
+    float ao = 1.0 - pow(groove, 1.15) * 0.88;
     float crown = 1.0 + 0.09 * (1.0 - vSulc) * max(dot(n, key), 0.0);
-    float sheen = 0.08 * pow(max(dot(n, normalize(key + vec3(0.0, 0.0, 1.0))), 0.0), 10.0);
+    float sheen = 0.045 * pow(max(dot(n, normalize(key + vec3(0.0, 0.0, 1.0))), 0.0), 6.0);
     float midline = 0.014 * sin(vPosition.y * 7.0 + 0.4) + 0.003 * sin(vPosition.y * 19.0);
     float medial = (1.0 - smoothstep(0.006, 0.035, abs(vPosition.x - midline)));
     float flank = mix(0.45, 1.0, smoothstep(-0.15, 0.75, n.z));
@@ -70,8 +62,8 @@ const fragmentShader = `
   }
 `;
 
-/** An imperative, render-on-demand scene; React owns only the controls/overlay. */
-export function createBrainScene(canvas: HTMLCanvasElement, overlay: SVGGElement, onReady: () => void, onFailure: () => void, onGenerating: (value: boolean) => void) {
+/** An imperative, render-on-demand scene; React owns the canvas and scan overlay. */
+export function createBrainScene(canvas: HTMLCanvasElement, overlay: SVGGElement, onReady: () => void, onFailure: () => void) {
   // Probe on the actual canvas to avoid renderer error logging for a supported fallback.
   const context = canvas.getContext("webgl2", { alpha: true, antialias: true, powerPreference: "low-power" });
   if (!context) throw new Error("WebGL unavailable");
@@ -89,20 +81,12 @@ export function createBrainScene(canvas: HTMLCanvasElement, overlay: SVGGElement
   ramp.needsUpdate = true;
   const uniforms = {
     heatRamp: { value: ramp }, origin: { value: new THREE.Vector3() }, radius: { value: 300 },
-    depth: { value: DEFAULT_FOLDING.depth },
   };
   const material = new THREE.ShaderMaterial({ uniforms, vertexShader, fragmentShader, side: THREE.FrontSide });
-  type Shape = { side: "left" | "right"; delta: Float32Array; sulc: Float32Array; foldNormal: Float32Array; deepNormal: Float32Array; normals?: Float32Array; positions?: Float32Array; faces?: Uint32Array; tangentU?: Float32Array; tangentV?: Float32Array };
   const parts = new Map<string, THREE.BufferGeometry>();
+  const heatReference = new WeakMap<THREE.BufferGeometry, Float32Array>();
   let disposed = false, ready = false, failed = false, raf = 0;
-  let request = 0, activeSeed = DEFAULT_SEED, count = DEFAULT_FOLDING.folding, busy = false;
-  let requestedKey = "";
   let previousSpots: number[] = [], finishedSpots: number[] = [];
-  const cache = new Map<string, Shape[]>();
-  let worker: Worker | undefined, model: CortexModel | undefined, workerInitialized = false, hasEnvelope = false;
-  let desiredDepth = DEFAULT_FOLDING.depth;
-  let fadeLayer: HTMLCanvasElement | undefined;
-  const bases = new Map<string, Pick<Shape, "positions" | "normals" | "faces">>();
   let scanStart = -Infinity, lastTime = performance.now();
   let drag: { id: number; x: number; y: number } | null = null;
   let keyboardHold = false;
@@ -192,135 +176,39 @@ export function createBrainScene(canvas: HTMLCanvasElement, overlay: SVGGElement
   reduced.addEventListener("change", invalidate);
 
   function applyHeat(geometry: THREE.BufferGeometry) {
-    const data = heatAttributes(geometry.getAttribute("position").array, previousSpots, finishedSpots);
+    const data = heatAttributes(heatReference.get(geometry) ?? geometry.getAttribute("position").array, previousSpots, finishedSpots);
     for (const key of ["heat", "before", "after", "head"] as const) {
       const attribute = geometry.getAttribute(key) as THREE.BufferAttribute | undefined;
       if (attribute) { (attribute.array as Float32Array).set(data[key]); attribute.needsUpdate = true; }
       else geometry.setAttribute(key, new THREE.BufferAttribute(data[key], key === "head" ? 3 : 1));
     }
   }
-  function crossfade() {
-    fadeLayer?.remove();
-    if (!ready || reduced.matches) return;
-    renderer.render(scene, camera);
-    const layer = document.createElement("canvas");
-    layer.width = canvas.width; layer.height = canvas.height;
-    layer.className = "absolute inset-0 size-full pointer-events-none";
-    layer.setAttribute("aria-hidden", "true");
-    layer.getContext("2d")?.drawImage(canvas, 0, 0);
-    canvas.after(layer); fadeLayer = layer;
-    layer.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 250, easing: "ease-out" }).onfinish = () => { layer.remove(); if (fadeLayer === layer) fadeLayer = undefined; };
-  }
-  function installPattern(shapes: Shape[], transition = true) {
-    if (transition) crossfade();
-    for (const shape of shapes) {
-      let geometry = parts.get(shape.side);
-      if (shape.positions) bases.set(shape.side, shape);
-      const base = bases.get(shape.side);
-      if (!geometry) {
-        geometry = new THREE.BufferGeometry();
-        geometry.setIndex(new THREE.BufferAttribute(shape.faces!, 1));
-        geometry.setAttribute("position", new THREE.BufferAttribute(shape.positions!, 3));
-        geometry.setAttribute("normal", new THREE.BufferAttribute(shape.normals!, 3));
-        geometry.computeBoundingSphere();
-        parts.set(shape.side, geometry);
-        applyHeat(geometry);
-        group.add(new THREE.Mesh(geometry, material));
-      }
-      if (base) {
-        for (const key of ["position", "normal"] as const) {
-          const attribute = geometry.getAttribute(key) as THREE.BufferAttribute;
-          (attribute.array as Float32Array).set(key === "position" ? base.positions! : base.normals!); attribute.needsUpdate = true;
-        }
-        applyHeat(geometry);
-      }
-      for (const key of ["delta", "foldNormal", "deepNormal", "sulc"] as const) {
-        const attribute = geometry.getAttribute(key) as THREE.BufferAttribute | undefined;
-        if (attribute) { (attribute.array as Float32Array).set(shape[key]); attribute.needsUpdate = true; }
-        else geometry.setAttribute(key, new THREE.BufferAttribute(shape[key].slice(), key === "sulc" ? 1 : 3).setUsage(THREE.DynamicDrawUsage));
-      }
-    }
-    invalidate();
-  }
-  function receivePattern(event: MessageEvent<{ request: number; seed: number; count: number; error?: string; parts: Shape[]; generationMs: number; envelopeMs: number }>) {
-    if (disposed || failed || event.data.request !== request) return;
-    if (event.data.error) { fail(); return; }
-    const { parts: shapes, generationMs, envelopeMs } = event.data;
-    busy = false;
-    for (const shape of shapes) if (shape.positions) bases.set(shape.side, shape);
-    hasEnvelope = true;
-    const completedKey = `${event.data.seed}:${event.data.count}`;
-    cache.set(completedKey, shapes);
-    if (cache.size > 8) cache.delete(cache.keys().next().value!);
-    if (completedKey !== `${activeSeed}:${count}` && ready) { requestPattern(); return; }
-    installPattern(shapes);
-    uniforms.depth.value = desiredDepth;
-    canvas.dataset.foldCount = String(event.data.count);
-    canvas.dataset.generationMs = generationMs.toFixed(1);
-    canvas.dataset.envelopeMs = envelopeMs.toFixed(1);
-    canvas.dataset.seed = String(event.data.seed);
-    ready = true;
-    resize();
-    renderer.compile(scene, camera);
-    if (failed) return;
-    onGenerating(false); invalidate();
-    if (completedKey !== `${activeSeed}:${count}`) requestPattern();
-  }
-  function requestPattern() {
-    if (!ready || !model || disposed || failed) return;
-    const key = `${activeSeed}:${count}`;
-    const cached = cache.get(key);
-    if (cached) {
-      installPattern(cached); uniforms.depth.value = desiredDepth; onGenerating(false); requestedKey = key;
-      canvas.dataset.seed = String(activeSeed); canvas.dataset.foldCount = String(count); canvas.dataset.generationMs = "0";
-    } else {
-      onGenerating(true);
-      if (busy) return;
-      busy = true; requestedKey = key;
-      try {
-        if (!worker) {
-          worker = new Worker(new URL("./brain-cortex.worker.ts", import.meta.url), { type: "module" });
-          worker.onerror = fail; worker.onmessage = receivePattern;
-        }
-        worker.postMessage({ seed: activeSeed, count, model: workerInitialized ? undefined : model, request: ++request });
-        workerInitialized = true;
-      } catch { fail(); }
-    }
-  }
   fetch(CORTEX_URL, { signal: abort.signal })
     .then((response) => { if (!response.ok) throw new Error("Cortex model unavailable"); return response.arrayBuffer(); })
     .then((buffer) => {
       if (disposed) return;
-      const asset = decodeCortex(buffer); model = asset.model;
-      const baked = (["left", "right"] as const).map((side) => {
-        const { positions, sulc } = asset.baked[side], faces = Uint32Array.from(asset.model[side].faces), normals = surfaceNormals(positions, faces);
-        return { side, positions, faces, normals, sulc, delta: new Float32Array(positions.length), foldNormal: normals, deepNormal: normals };
-      });
-      installPattern(baked, false);
-      bases.clear();
+      const asset = decodeCortex(buffer);
+      for (const side of ["left", "right"] as const) {
+        const { positions, faces, cavity } = asset[side];
+        const geometry = new THREE.BufferGeometry();
+        geometry.setIndex(new THREE.BufferAttribute(faces, 1));
+        geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute("normal", new THREE.BufferAttribute(surfaceNormals(positions, faces), 3));
+        geometry.setAttribute("sulc", new THREE.BufferAttribute(cavity, 1));
+        heatReference.set(geometry, positions);
+        geometry.computeBoundingSphere();
+        parts.set(side, geometry);
+        applyHeat(geometry);
+        group.add(new THREE.Mesh(geometry, material));
+      }
       ready = true; resize(); renderer.compile(scene, camera); renderer.render(scene, camera);
       if (failed) return;
       canvas.dataset.firstFrameMs = performance.now().toFixed(1);
-      canvas.dataset.generationMs = "0"; canvas.dataset.seed = String(DEFAULT_SEED); canvas.dataset.foldCount = String(DEFAULT_FOLDING.folding);
-      requestedKey = `${DEFAULT_SEED}:${DEFAULT_FOLDING.folding}`;
-      onGenerating(false); onReady(); invalidate();
-      if (count !== DEFAULT_FOLDING.folding || desiredDepth !== DEFAULT_FOLDING.depth || activeSeed !== DEFAULT_SEED) requestPattern();
+      onReady(); invalidate();
     })
-    .catch(fail);
+    .catch(() => { if (!disposed) fail(); });
 
   return {
-    setParameters(next: FoldingParameters) {
-      count = Math.round(next.folding * 100) / 100;
-      desiredDepth = next.depth;
-      if (requestedKey !== `${activeSeed}:${count}` || (!hasEnvelope && next.depth !== DEFAULT_FOLDING.depth)) requestPattern();
-      if (hasEnvelope) uniforms.depth.value = desiredDepth;
-      invalidate();
-    },
-    regenerate(seed: number) {
-      if (!ready || disposed || failed) return;
-      activeSeed = seed >>> 0;
-      requestPattern();
-    },
     setScan(scan: ScanUpdate | null, spots: number[]) {
       if (spots.join(",") === finishedSpots.join(",")) return;
       previousSpots = scan ? finishedSpots : [];
@@ -330,16 +218,9 @@ export function createBrainScene(canvas: HTMLCanvasElement, overlay: SVGGElement
       scanStart = scan ? performance.now() : -Infinity;
       invalidate();
     },
-    resetView() {
-      if (drag && canvas.hasPointerCapture(drag.id)) canvas.releasePointerCapture(drag.id);
-      drag = null; keyboardHold = false; canvas.style.cursor = "grab";
-      target.set(0, 0); invalidate();
-    },
     dispose() {
       disposed = true;
       abort.abort();
-      worker?.terminate();
-      fadeLayer?.remove();
       cancelAnimationFrame(raf);
       observer.disconnect();
       reduced.removeEventListener("change", invalidate);

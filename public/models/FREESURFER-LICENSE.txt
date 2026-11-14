@@ -1,4 +1,4 @@
-MODIFIED DATASET: fsaverage6 cortex, obtained via Nilearn. Rescaled to the Lucid head frame, quantized, and augmented with seeded default geometry. This is not the original FreeSurfer dataset.
+MODIFIED DATASET: fsaverage6 cortex, obtained via Nilearn. Rescaled to the Lucid head frame, closed and remeshed offline, quantized, and augmented with cavity occlusion. This is not the original FreeSurfer dataset.
 Source: https://nilearn.github.io/stable/modules/description/fsaverage6.html
 
 All or portions of this licensed product (such portions are the "Software") have been obtained under license from The General Hospital Corporation and are subject to the following terms and conditions:
