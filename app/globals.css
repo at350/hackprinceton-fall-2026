@@ -1,26 +1,214 @@
 @import "tailwindcss";
 
+/* Palette: Radix custom dark. Lines and raised fills follow the references
+   (Koniku / Grainient 9% white lines, GenRevive 4-7% white surfaces). */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #0d0f11;
+  --panel: #17191b;
+  --border: #363b41;
+  --text: #edeef0;
+  --muted: #acb5c0;
+  --primary: #22c3e6;
+  --bleed: #ff5a36;
+  --bleed-text: #ff9479;
+  --uncertain: #ffc53d;
+  --safe: #5b7cff;
+  --safe-text: #93b1ff;
+  --line: rgba(255, 255, 255, 0.09);
+  --line-strong: rgba(255, 255, 255, 0.18);
+  --raised: rgba(255, 255, 255, 0.045);
+
+  /* Motion, taken from the references. */
+  --ease-hover: cubic-bezier(0.23, 1, 0.32, 1); /* Koniku */
+  --ease-enter: cubic-bezier(0.08, 0.78, 0.56, 1); /* Alpine Bio */
+  --ease-expo: cubic-bezier(0.19, 1, 0.22, 1); /* Koniku / Delta */
+  --ease-swap: cubic-bezier(0.77, 0, 0.175, 1); /* Delta arrow swap */
+  --ease-mask: cubic-bezier(0.215, 0.61, 0.355, 1); /* Koniku SplitText */
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-primary: var(--primary);
+  --color-bleed: var(--bleed);
+  --color-bleed-text: var(--bleed-text);
+  --color-uncertain: var(--uncertain);
+  --color-safe: var(--safe);
+  --color-safe-text: var(--safe-text);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-raised: var(--raised);
+  --font-sans: var(--font-switzer), ui-sans-serif, system-ui, sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Grainient-style backdrop: soft blobs in one hue family plus SVG grain. */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(60% 55% at 8% 0%, rgba(34, 195, 230, 0.07), transparent 70%),
+    radial-gradient(45% 50% at 100% 100%, rgba(34, 120, 160, 0.08), transparent 70%),
+    radial-gradient(40% 40% at 70% 20%, rgba(80, 100, 130, 0.06), transparent 70%),
+    var(--bg);
+}
+.backdrop::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 160px;
+  opacity: 0.06;
+  mix-blend-mode: overlay;
+}
+/* Alpine Bio: faint full-height vertical grid lines. */
+.backdrop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(to right, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: calc((100vw - 32px) / 12) 100%;
+  background-position: 16px 0;
+}
+
+/* Panels sit on the backdrop; a little grain on the surface too. */
+.surface {
+  position: relative;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.surface::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 160px;
+  opacity: 0.035;
+  mix-blend-mode: overlay;
+}
+
+/* Micro-labels: uppercase, tracked (Delta / Koniku / Alpine). */
+.label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  line-height: 1;
+}
+/* Alpine Bio "↳ LABEL" section header. */
+.section-label::before {
+  content: "↳";
+  margin-right: 6px;
+  letter-spacing: 0;
+  opacity: 0.7;
+}
+
+.num-xl {
+  letter-spacing: -0.04em;
+  font-weight: 500;
+  line-height: 1;
+}
+
+/* Koniku live dot: 1px ring scales out and fades. */
+@keyframes pulse-ring {
+  from {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  to {
+    transform: scale(2.4);
+    opacity: 0;
   }
 }
+.pulse-ring {
+  animation: pulse-ring 2s cubic-bezier(0.075, 0.82, 0.165, 1) infinite;
+}
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Koniku wave-bar loader. */
+@keyframes wave {
+  0%,
+  100% {
+    transform: scaleY(0.4);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+.wave > span {
+  display: block;
+  width: 2px;
+  border-radius: 1px;
+  background: currentColor;
+  animation: wave 1.2s ease-in-out infinite;
+}
+.wave > span:nth-child(2) {
+  animation-delay: 0.1s;
+}
+.wave > span:nth-child(3) {
+  animation-delay: 0.2s;
+}
+.wave > span:nth-child(4) {
+  animation-delay: 0.3s;
+}
+
+/* Koniku drifting dashed "signal" line. */
+@keyframes dash-drift {
+  to {
+    background-position: 40px 0;
+  }
+}
+.dash-line {
+  background-image: linear-gradient(to right, var(--line-strong) 50%, transparent 50%);
+  background-size: 8px 1px;
+  background-repeat: repeat-x;
+  animation: dash-drift 4s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+}
+
+::selection {
+  background: rgba(34, 195, 230, 0.3);
+}
+
+:focus-visible {
+  outline: 1px solid var(--primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
