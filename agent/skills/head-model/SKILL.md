@@ -1,6 +1,6 @@
 ---
 name: head-model
-description: The head model behind the simulations, what the device readings mean, the decision rule, and the limits of what a scan can show. Read when choosing focus regions, judging fits, or when asked how the result was worked out or how far to trust it.
+description: The head model behind the simulations, what the device readings mean, how the search runs, the decision rule, and the limits of what a scan can show. Read when judging fits, or when asked how the result was worked out or how far to trust it.
 ---
 
 # Head model, readings and limits
@@ -34,9 +34,9 @@ A coarse 2D slice of the head, seen from above, solved with pyEIT. Layers and co
 
 Regions: L/R frontal, temporal, parietal, occipital. Volumes: 5 to 40 mL in 5 mL steps.
 
-## Choosing focus regions
+## The search
 
-Look at the change from a healthy head in the scan table. Focus on the 1 to 3 regions under the spots with the largest coil drop (at least about 0.5 dB) or NIR drop (at least about 0.01). If no spot stands out, pass no focus regions: every region then gets the same sweep.
+A coarse sweep first: every type in every region at 10, 20, 30 and 40 mL. Each region agent then looks closer where its coarse scores point, adding the volumes in between. A second check tests rival explanations for the leading finding (other types in the same place, neighbouring regions, the opposite side) or, when nothing fits, the smallest bleeds everywhere. All of it is scored against the same scan, so a rival that fits changes the outcome.
 
 ## Decision rule
 
