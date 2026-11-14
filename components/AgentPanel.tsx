@@ -141,7 +141,9 @@ function Trace({ steps }: { steps: AgentStep[] }) {
         style={{ gridTemplateRows: open ? "1fr" : "0fr", opacity: open ? 1 : 0, transitionTimingFunction: "cubic-bezier(0.23,1,0.32,1)" }}
       >
         <div className="min-h-0 overflow-hidden">
-          <div ref={scroller} className="scroll-thin relative max-h-[164px] overflow-y-auto px-3 pb-2.5">
+          <div ref={scroller} className="scroll-thin relative max-h-[168px] overflow-y-auto px-3 pb-3"
+            style={{ maskImage: "linear-gradient(to bottom, black calc(100% - 20px), transparent)", WebkitMaskImage: "linear-gradient(to bottom, black calc(100% - 20px), transparent)" }}
+          >
             <ul>
               {todos.map((todo) => {
                 const kids = tools.filter((t) => PARENT[t.id] === todo.id);
@@ -289,10 +291,10 @@ export function AgentPanel() {
       <Trace steps={steps} />
       <div
         ref={scroller}
-        className="scroll-thin mt-1 flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-4 pt-4 pb-3"
+        className="scroll-thin mt-2 flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-4 pt-4 pb-3"
         style={{
-          maskImage: "linear-gradient(to bottom, transparent 0, black 28px)",
-          WebkitMaskImage: "linear-gradient(to bottom, transparent 0, black 28px)",
+          maskImage: "linear-gradient(to bottom, transparent 0, transparent 10px, black 40px)",
+          WebkitMaskImage: "linear-gradient(to bottom, transparent 0, transparent 10px, black 40px)",
         }}
       >
         {messages.map((m) => (
