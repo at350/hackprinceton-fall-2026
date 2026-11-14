@@ -11,6 +11,7 @@ from pathlib import Path
 from .headmodel import field, forward, mesh_geometry, null_reading
 from .geometry import BLEED_TYPES, LOBES, REGION_ANGLE, SPOT_NAMES, VOLUMES, hypothesis_map
 from .scans import MOCK_CASES, fit, likelihood_map, mock_scan, residuals, spot_peaks
+from .render import map_png
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 TABLE_PATH = DATA_DIR / "sim_table.json"
@@ -84,6 +85,7 @@ __all__ = [
     "residuals",
     "hypothesis_map",
     "likelihood_map",
+    "map_png",
     "spot_peaks",
     "mock_scan",
 ]

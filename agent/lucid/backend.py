@@ -1,4 +1,4 @@
-"""The agent's file system: three places behind one set of file tools."""
+"""The agent's file system: four places behind one set of file tools."""
 
 from deepagents.backends import CompositeBackend, FilesystemBackend, StateBackend, StoreBackend
 
@@ -12,9 +12,15 @@ backend = CompositeBackend(
         "/skills/": FilesystemBackend(root_dir=SKILLS_DIR, virtual_mode=True),
         # Patient baselines live in the LangGraph Store (SQLite), across threads and restarts.
         "/patients/": StoreBackend(namespace=lambda _rt: ("lucid", "patients")),
+        # Clinicians' standing preferences for pre-alerts, kept across scans and patients.
+        "/clinicians/": StoreBackend(namespace=lambda _rt: ("lucid", "clinicians")),
     },
 )
 
 
 def baseline_path(patient_id: str) -> str:
     return f"/patients/{patient_id}/baseline.json"
+
+
+def notes_path(handle: str) -> str:
+    return f"/clinicians/{handle}/notes.md"

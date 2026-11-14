@@ -45,8 +45,18 @@ class LucidState(DeepAgentState):
     sims: NotRequired[Annotated[list[dict], merge_sims]]
     # UI: the map of the result the medic is being asked to approve.
     preview: NotRequired[Annotated[dict | None, last]]
-    # UI: set once a pre-alert went out.
+    # UI: set once the medic approved a pre-alert. Without a Photon key: {to, message, report, sent_at, simulated: True}.
+    # With one: {to (masked handle), message (as sent), report, sent_at, simulated: False, channel: "imessage",
+    # status: "sent" | "failed" | "no_one_on_call", reply: None}. Live delivery and replies are in the Store
+    # record ["lucid", "handoffs"] / <thread id>. After a re-scan update it is the update: kind "update", reply = the
+    # acceptance it followed.
     handoff: NotRequired[Annotated[dict | None, last]]
+    # On a later scan: the clinician who accepted this patient's hand-off, from any thread, so the result card can say
+    # they will be told (it is built without I/O). {thread_id, to, space_id, agent_user_id, reply}, or None.
+    accepted_by: NotRequired[Annotated[dict | None, last]]
+    # The on-call clinician the pre-alert card names, looked up from the roster when a bleed result is approved
+    # (the card is built without I/O). {handle, space_id, agent_user_id, since, active}, or None if nobody is on call.
+    recipient: NotRequired[Annotated[dict | None, last]]
 
     # Working data for the tools (raw spot readings, earlier scan, no-bleed fit).
     reading: NotRequired[Annotated[dict | None, last]]

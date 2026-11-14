@@ -6,14 +6,16 @@ model never has to carry maps or tables through its context.
 
 import asyncio
 import json
+import re
 from datetime import UTC, datetime
 
+import httpx
 from langchain.tools import ToolRuntime, tool
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
-from lucid import physics
-from lucid.backend import backend, baseline_path
+from lucid import photon, physics
+from lucid.backend import backend, baseline_path, notes_path
 from lucid.config import COARSE_VOLUMES, DEFAULT_PATIENT, DEFAULT_SCAN, MAX_HYPOTHESES, MAX_NEW_PER_CALL, SIM_PACE_S
 from lucid.decision import decide, describe
 
@@ -137,7 +139,8 @@ async def read_scan(runtime: ToolRuntime) -> Command:
         + "\n".join(_scan_rows(scan))
         + ("\nAn earlier scan of this patient is on file." if has_baseline else "\nNo earlier scan of this patient is on file.")
     )
-    return _reply(runtime, text, **update, null_fit=None, handoff=None, preview=None, rescans=0)
+    accepted = await _accepted_handoff(runtime) if has_baseline else None
+    return _reply(runtime, text, **update, null_fit=None, handoff=None, recipient=None, accepted_by=accepted, preview=None, rescans=0)
 
 
 @tool
@@ -375,7 +378,97 @@ async def rank_fits(runtime: ToolRuntime) -> Command:
     else:
         nxt = f"Next: propose '{d['status']}' with submit_result" + (f" (hypothesis_id {d['best']['id']})." if d["status"] == "bleed" else ".")
     update = {"preview": await _preview(runtime, d["best"]["id"])} if d["status"] == "bleed" else {}
-    return _reply(runtime, f"{describe(d)}\nBest fit per region:\n{table}\nRegion agents' notes (from /sims/*.json):\n{notes}\n{nxt}", **update)
+    if (state.get("reading") or {}).get("later_scan"):  # an acceptance may have come in since the scan was read
+        update["accepted_by"] = await _accepted_handoff(runtime)
+    prefs = await _oncall_preferences(runtime) if d["status"] == "bleed" else ""
+    return _reply(runtime, f"{describe(d)}\nBest fit per region:\n{table}\nRegion agents' notes (from /sims/*.json):\n{notes}\n{nxt}{prefs}", **update)
+
+
+# ---- Memory: who accepted this patient, and what each clinician wants in a pre-alert --
+
+
+async def _accepted_handoff(runtime: ToolRuntime) -> dict | None:
+    """The newest hand-off for this patient that a clinician accepted, on any thread: the dashboard runs a re-scan on a new one."""
+    if not photon.enabled():
+        return None
+    try:
+        items = await runtime.store.asearch(photon.HANDOFFS_NS, filter={"patient_id": _patient(runtime)}, limit=100)
+    except Exception:  # noqa: BLE001 - an unreadable record names nobody, so nothing is sent
+        return None
+    accepted = [i.value for i in items if (i.value.get("reply") or {}).get("decision") == "accept" and i.value.get("to") and not i.value.get("simulated")]
+    if not accepted:
+        return None
+    r = max(accepted, key=lambda r: r["reply"].get("at") or "")
+    return {k: r[k] for k in ("thread_id", "to", "space_id", "agent_user_id", "reply")}
+
+
+async def _oncall_preferences(runtime: ToolRuntime) -> str:
+    """The on-call clinician's standing preferences, for rank_fits to pass on: the pre-alert follows them without an extra turn."""
+    who = await _on_call(runtime) if photon.enabled() else None
+    notes = (await _read_text(notes_path(who["handle"])) or "").strip() if who else ""
+    if not notes:
+        return ""
+    return f"\nThe on-call clinician's standing preferences for pre-alerts (follow them in send_prealert's message; the safety wording still applies):\n{notes}"
+
+
+def rescan_update_text(patient_id: str, before: dict, after: dict, minutes: int) -> str:
+    """The re-scan update, built from the two approved results only, never from the model's wording.
+    A change under 5 mL is within the model's resolution (skills/head-model), so it is "no change"."""
+
+    def finding(r: dict) -> str:
+        return f"{r['type']}, {r['region']}, about {r['volume_ml']} mL" if r["status"] == "bleed" else "no bleed seen"
+
+    if before["status"] == "bleed" and after["status"] == "clear":
+        body = f"The bleed pattern seen then ({finding(before)}) is no longer seen. This does not rule a bleed out."
+    elif before["status"] == "bleed" and after["status"] == "bleed":
+        change = after["volume_ml"] - before["volume_ml"]
+        trend = f"Growing, +{change} mL" if change >= 5 else f"Smaller, {change} mL" if change <= -5 else "No change in size (within 5 mL)"
+        where = "same place" if after["region"] == before["region"] else f"now {after['region']}, was {before['region']}"
+        body = f"Then: {finding(before)}. Now: {finding(after)}. {trend}, {where}."
+    else:
+        body = f"Then: {finding(before)}. Now: {finding(after)}."
+    return f"Lucid update, patient {patient_id}: re-scan {minutes} min after the first scan.\n{body}\n{photon.SAFETY_LINE}"
+
+
+def _update_to(state: dict, status: str) -> dict | None:
+    """Who an approved result will update: the clinician who accepted this patient, on a later scan with a bleed or clear result."""
+    if status in ("bleed", "clear") and (state.get("reading") or {}).get("later_scan") and photon.enabled():
+        return state.get("accepted_by")
+    return None
+
+
+def _updated(state: dict) -> bool:
+    """This scan already went to the clinician who accepted the patient, as an update."""
+    return (state.get("handoff") or {}).get("kind") == "update"
+
+
+async def _send_rescan_update(runtime: ToolRuntime, who: dict, result: dict, base: dict) -> tuple[dict | None, str]:
+    """Text the clinician who accepted this patient the change since `base`, the first scan. Returns (state hand-off or None, a note for the model)."""
+    thread_id = runtime.config["configurable"]["thread_id"]
+    item = await runtime.store.aget(photon.HANDOFFS_NS, who["thread_id"])
+    if item is None or (item.value.get("reply") or {}).get("decision") != "accept":
+        return None, ""  # they declined since, or the record is gone: nothing goes out
+    rec, to = item.value, photon.mask(item.value["to"])
+    taken = (datetime.fromisoformat(runtime.state["reading"]["taken_at"]) - datetime.fromisoformat(base["taken_at"])).total_seconds()
+    text = rescan_update_text(_patient(runtime), base["result"], result, max(1, round(taken / 60)))
+    try:
+        mid = await photon.send_text(rec["space_id"], rec["agent_user_id"], text, f"update:{thread_id}:{runtime.tool_call_id}")
+    except (photon.PhotonError, httpx.HTTPError) as e:
+        return None, f" The update to the clinician who accepted this patient ({to}) could not be sent ({e}). Tell the medic."
+    sent_at, msg = datetime.now(UTC).isoformat(timespec="seconds"), {"id": mid, "kind": "update", "status": "queued"}
+    report = await _read_text(REPORT_FILE) or ""
+    fresh = (await runtime.store.aget(photon.HANDOFFS_NS, who["thread_id"])).value  # the bridge writes delivery status here too
+    await runtime.store.aput(photon.HANDOFFS_NS, who["thread_id"], {**fresh, "messages": [*fresh.get("messages", []), msg]})
+    if who["thread_id"] != thread_id:
+        # A re-scan on a new thread gets its own record: the dashboard shows the update, and the clinician's next text reaches this scan.
+        await runtime.store.aput(
+            photon.HANDOFFS_NS,
+            thread_id,
+            {**{k: rec[k] for k in ("patient_id", "to", "space_id", "agent_user_id", "reply")}, "thread_id": thread_id, "sent_at": sent_at, "message": text,
+             "report": report, "status": "sent", "messages": [msg], "call": None, "simulated": False, "update_of": who["thread_id"]},
+        )
+    handoff = {"to": to, "message": text, "report": report, "sent_at": sent_at, "simulated": False, "channel": "imessage", "status": "sent", "reply": rec.get("reply"), "kind": "update"}
+    return handoff, f" The clinician who accepted this patient ({to}) was texted the change since the first scan:\n{text}\nDo not call send_prealert; tell the medic they were told."
 
 
 @tool
@@ -424,17 +517,20 @@ def result_needs_approval(request) -> bool:
 
 
 def describe_result(tool_call, state, _runtime) -> str:
-    """What the approval card says."""
+    """What the approval card says. On a later scan it also names the clinician the approval will update."""
     args = tool_call["args"]
     _, d = check_result(args, state)
     b = d["best"]
     if args["status"] == "bleed":
         lo, hi = d["volume_range"]
         size = f"about {b['volume_ml']} mL" if lo == hi else f"about {b['volume_ml']} mL (range {lo}-{hi})"
-        return f"Mark this scan Bleed likely?\n{b['type'].capitalize()}, {b['region']}, {size}. Fit {b['score']:.2f}."
-    if args["status"] == "clear":
-        return f"Mark this scan No bleed seen?\nThe no-bleed model fits at {d['null_fit']:.2f}; no bleed hypothesis comes close. Screening aid, not a diagnosis."
-    return f"Mark this scan Uncertain, re-scan?\n{d['reason']}"
+        text = f"Mark this scan Bleed likely?\n{b['type'].capitalize()}, {b['region']}, {size}. Fit {b['score']:.2f}."
+    elif args["status"] == "clear":
+        text = f"Mark this scan No bleed seen?\nThe no-bleed model fits at {d['null_fit']:.2f}; no bleed hypothesis comes close. Screening aid, not a diagnosis."
+    else:
+        return f"Mark this scan Uncertain, re-scan?\n{d['reason']}"
+    who = _update_to(state, args["status"])
+    return text + (f"\nThe clinician who accepted this patient ({photon.mask(who['to'])}) will be told." if who else "")
 
 
 @tool
@@ -466,43 +562,229 @@ async def submit_result(status: str, hypothesis_id: str, summary: str, runtime: 
 
     note = ""
     path = baseline_path(_patient(runtime))
-    if status != "uncertain" and await _read_json(path) is None:
+    base = await _read_json(path)  # read before this result can become the baseline: an update compares with an earlier scan
+    if status != "uncertain" and base is None:
         await backend.awrite(path, json.dumps({**state["reading"], "result": result}))
         note = " Saved as this patient's baseline for later re-scans."
-    return _reply(runtime, f"Medic approved. Recorded: {status}.{note}", scan=scan, preview=None)
+    update = {}
+    who = _update_to(state, status) if base else None  # the card named them, so the medic's approval covers this text
+    handoff, told = await _send_rescan_update(runtime, who, result, base) if who else (None, "")
+    if handoff:
+        update["handoff"] = handoff
+        _emit(runtime, {"type": "handoff", "handoff": handoff})
+    elif status == "bleed" and photon.enabled():
+        # The pre-alert card is built without I/O, so the recipient is looked up now; the card and the send both use it.
+        update["recipient"] = await _on_call(runtime)
+    return _reply(runtime, f"Medic approved. Recorded: {status}.{note}{told}", scan=scan, preview=None, **update)
+
+
+async def _on_call(runtime: ToolRuntime) -> dict | None:
+    """Who is on call now, from the roster in the Store. None if nobody is, or the roster cannot be read."""
+    try:
+        items = await runtime.store.asearch(photon.ONCALL_NS, limit=100)
+    except Exception:  # noqa: BLE001 - an unreadable roster names nobody, so nothing is sent
+        return None
+    return photon.pick_oncall([i.value for i in items])
 
 
 def prealert_needs_approval(request) -> bool:
-    return (request.state.get("scan") or {}).get("status") == "bleed" and REPORT_FILE in (request.state.get("files") or {})
+    """No card once the accepting clinician was updated: the tool refuses then, without sending anything."""
+    state = request.state
+    return (state.get("scan") or {}).get("status") == "bleed" and REPORT_FILE in (state.get("files") or {}) and not _updated(state)
 
 
 def describe_prealert(tool_call, state, _runtime) -> str:
     scan = state.get("scan") or {}
+    fit = f"best fit ({scan.get('region')}, {scan.get('volume_ml')} mL)"
+    if not photon.enabled():
+        return (
+            f"Send pre-alert to {tool_call['args'].get('destination', 'the receiving trauma center')}?\n"
+            f"Includes the map, {fit}, the scan log and the hand-off report."
+        )
+    who = state.get("recipient")
+    if who is None:
+        return "Nobody is on call, so no pre-alert will be sent.\nApprove to record that, then hand off by radio."
     return (
-        f"Send pre-alert to {tool_call['args'].get('destination', 'the receiving trauma center')}?\n"
-        f"Includes the map, best fit ({scan.get('region')}, {scan.get('volume_ml')} mL), the scan log and the hand-off report."
+        f"Send pre-alert to the on-call clinician ({photon.mask(who['handle'])}) by iMessage?\n"
+        f"The map image and the pre-alert text with the {fit}. They can reply to accept, decline or ask about the scan."
     )
+
+
+async def _prealert_imessage(runtime: ToolRuntime, message: str, report: str, sent_at: str) -> tuple[dict, str]:
+    """Send the map image, then the text, to the clinician the medic approved. Returns the state hand-off and the reply for the model.
+
+    The full record (handle, Photon ids, message ids) goes to the Store, where the replies bridge and the dashboard follow it.
+    """
+    state = runtime.state
+    thread_id = runtime.config["configurable"]["thread_id"]
+    patient = _patient(runtime)
+    text = photon.prealert_text(message, patient)
+    named = state.get("recipient")  # whom the approval card named; nobody else gets it
+    entry = await runtime.store.aget(photon.ONCALL_NS, named["handle"]) if named else None
+    who = entry.value if entry and entry.value.get("active") else None
+    record = {
+        "thread_id": thread_id,
+        "patient_id": patient,
+        "to": who and who["handle"],
+        "space_id": who and who["space_id"],
+        "agent_user_id": who and who["agent_user_id"],
+        "sent_at": sent_at,
+        "message": text,
+        "report": report,
+        "status": "no_one_on_call",
+        "messages": [],
+        "reply": None,
+        "call": None,
+        "simulated": False,
+    }
+    if who is None:
+        reply = "Medic approved, but no clinician is on call, so nothing was sent. Tell the medic nobody is on call and to hand off by radio."
+    else:
+        key, to = f"prealert:{thread_id}:{runtime.tool_call_id}", photon.mask(who["handle"])
+        note = ""
+        try:  # the map first; if it cannot go, the text still does
+            shown = {k: v for k, v in state["scan"].items() if k != "map"} | {"patient_id": patient}
+            png = await asyncio.to_thread(physics.map_png, state["scan"]["map"], shown)
+            mid = await photon.send_image(who["space_id"], who["agent_user_id"], png, "lucid-map.png", f"{key}:image")
+            record["messages"].append({"id": mid, "kind": "image", "status": "queued"})
+        except (photon.PhotonError, httpx.HTTPError, KeyError) as e:
+            note = f" The map image could not be sent ({e})."
+        try:
+            mid = await photon.send_text(who["space_id"], who["agent_user_id"], text, f"{key}:text")
+            record["messages"].append({"id": mid, "kind": "text", "status": "queued"})
+            record["status"] = "sent"
+            reply = (
+                f"Medic approved. Pre-alert sent by iMessage to the on-call clinician ({to}): "
+                f"{'the map image and ' if len(record['messages']) == 2 else ''}the text. Queued; delivery is not confirmed yet.{note} "
+                "The clinician can reply to accept, decline or ask about the scan. The report itself was not texted; it stays on record. "
+                "Tell the medic it went to the on-call clinician by iMessage and that their reply will show here."
+            )
+        except (photon.PhotonError, httpx.HTTPError) as e:
+            record |= {"status": "failed", "error": str(e)}
+            reply = f"Medic approved, but the pre-alert could not be sent ({e}). Tell the medic it did not go out and to hand off by radio."
+    await runtime.store.aput(photon.HANDOFFS_NS, thread_id, record)
+    handoff = {
+        "to": photon.mask(record["to"]) if record["to"] else None,
+        "message": text,
+        "report": report,
+        "sent_at": sent_at,
+        "simulated": False,
+        "channel": "imessage",
+        "status": record["status"],
+        "reply": None,
+    }
+    return handoff, reply
 
 
 @tool
 async def send_prealert(destination: str, message: str, runtime: ToolRuntime) -> Command:
-    """Hand off: send a pre-alert with the approved result, map, scan log and /report.md to the receiving hospital. Pauses for the medic's approval first.
+    """Hand off: send a pre-alert with the approved result and map to the on-call clinician by iMessage, with /report.md on record. Pauses for the medic's approval first.
 
     Only after a "bleed" result has been approved and /report.md has been written.
 
     Args:
-        destination: Who receives it, e.g. "the receiving trauma center".
-        message: The pre-alert text: finding, region, approximate volume, fit, and that this is a screening aid pending CT.
+        destination: Who receives it, e.g. "the on-call clinician".
+        message: The pre-alert text: finding, region, approximate volume, fit, and that this is a screening aid pending CT. Patient id only, never a name.
     """
     if (runtime.state.get("scan") or {}).get("status") != "bleed":
         return _reply(runtime, "No approved 'bleed' result on record, so there is nothing to hand off.")
+    if _updated(runtime.state):
+        return _reply(runtime, "Not sent: the clinician who accepted this patient was already texted the change since the first scan. No new pre-alert is needed; tell the medic they were told.")
     report = await _read_text(REPORT_FILE)
     if report is None:
         return _reply(runtime, f"Write the hand-off report to {REPORT_FILE} first; it goes out with the pre-alert.")
-    handoff = {"to": destination, "message": message, "report": report, "sent_at": datetime.now(UTC).isoformat(timespec="seconds"), "simulated": True}
+    sent_at = datetime.now(UTC).isoformat(timespec="seconds")
+    if not photon.enabled():  # no Photon line set up: the hand-off is recorded, not sent
+        handoff = {"to": destination, "message": message, "report": report, "sent_at": sent_at, "simulated": True}
+        _emit(runtime, {"type": "handoff", "handoff": handoff})
+        return _reply(runtime, "Medic approved. Recorded as simulated: no hospital link is configured, so nothing was sent to anyone. Tell the medic exactly that.", handoff=handoff)
+    handoff, reply = await _prealert_imessage(runtime, message, report, sent_at)
     _emit(runtime, {"type": "handoff", "handoff": handoff})
-    return _reply(runtime, f"Medic approved. Pre-alert and report sent to {destination} (simulated: no hospital link in this build).", handoff=handoff)
+    return _reply(runtime, reply, handoff=handoff)
 
 
-LEAD_TOOLS = [read_scan, recall_baseline, plan_hypotheses, forward_sim, fit_score, rank_fits, request_rescan, render_map, submit_result, send_prealert]
+# ---- The receiving clinician's answer --------------------------------------
+
+CLINICIAN_PREFIX = "[Receiving clinician"
+_CALL_DECISION = re.compile(r"^\[Receiving clinician, phone call\]\s*decision:\s*(accept|decline|none)\b", re.I)
+_DECISION_WORD = re.compile(r"\b(accept(?:ed|ing)?|declin(?:e|ed|ing))\b", re.I)
+_NEGATED = re.compile(r"\b(not|no|never|don'?t|doesn'?t|can'?t|cannot|won'?t|unable to)\s+(\w+\s+)?$", re.I)
+
+
+def _content(m) -> str:
+    c = m.content if hasattr(m, "content") else m.get("content")
+    return c if isinstance(c, str) else " ".join(b.get("text", "") for b in c or [] if isinstance(b, dict))
+
+
+def latest_clinician_message(messages: list) -> str | None:
+    """The newest message the bridge put on the thread from the receiving clinician (text or call), or None."""
+    return next((t for t in (_content(m) for m in reversed(messages) if getattr(m, "type", None) == "human") if t.startswith(CLINICIAN_PREFIX)), None)
+
+
+def clinician_decision(message: str) -> tuple[str | None, str]:
+    """(decision, via) as the clinician's own words give it. A call carries `decision:`, derived in code from their turns;
+    a text must say accept or decline itself, once, not negated. Anything else is no decision."""
+    if m := _CALL_DECISION.match(message):
+        return (None if m[1].lower() == "none" else m[1].lower()), "call"
+    body = message.split("]", 1)[-1]
+    found = set()
+    for w in _DECISION_WORD.finditer(body):
+        if _NEGATED.search(body[: w.start()]):
+            return None, "imessage"
+        found.add("accept" if w[0].lower().startswith("accept") else "decline")
+    return (found.pop() if len(found) == 1 else None), "imessage"
+
+
+@tool
+async def record_reply(decision: str, note: str, runtime: ToolRuntime) -> Command:
+    """Record the receiving clinician's answer to the pre-alert. Only when their latest message accepts or declines in so many words.
+
+    Args:
+        decision: "accept" or "decline".
+        note: One short sentence from their message worth keeping for the medic, or "".
+    """
+    decision = decision.strip().lower()
+    latest = latest_clinician_message(runtime.state.get("messages") or [])
+    thread_id = runtime.config["configurable"]["thread_id"]
+    item = await runtime.store.aget(photon.HANDOFFS_NS, thread_id)
+    if latest is None or item is None:
+        return _reply(runtime, "No pre-alert reply from a clinician on this thread, so there is nothing to record.")
+    found, via = clinician_decision(latest)
+    if decision not in ("accept", "decline") or found != decision:
+        return _reply(runtime, f"Not recorded: the clinician's latest message does not clearly say {decision.upper() or 'ACCEPT or DECLINE'}. Ask them to reply ACCEPT or DECLINE.")
+    reply = {"decision": decision, "note": note.strip(), "at": datetime.now(UTC).isoformat(timespec="seconds"), "via": via}
+    fresh = await runtime.store.aget(photon.HANDOFFS_NS, thread_id)  # the bridge writes delivery status into the same record
+    existing = (fresh or item).value.get("reply") or {}
+    if via == "call" and existing.get("via") == "imessage":
+        return _reply(runtime, "A decision already arrived by iMessage; keep that decision and recap the call without changing it.")
+    await runtime.store.aput(photon.HANDOFFS_NS, thread_id, {**(fresh or item).value, "reply": reply})
+    text = f"Recorded: the clinician {decision}s the patient ({via}). The medic sees it on the dashboard. Confirm it to the clinician in one sentence."
+    if not runtime.state.get("handoff"):
+        return _reply(runtime, text)
+    handoff = {**runtime.state["handoff"], "reply": reply}
+    _emit(runtime, {"type": "handoff", "handoff": handoff})
+    return _reply(runtime, text, handoff=handoff)
+
+
+@tool
+async def remember_preference(note: str, runtime: ToolRuntime) -> Command:
+    """Remember a standing preference the receiving clinician stated about how they want pre-alerts or answers, for their next pre-alert.
+
+    Format or content only (e.g. "always include contact quality"), never a clinical threshold: the decision rule is not theirs to change.
+
+    Args:
+        note: The preference as one short line, in their words where possible.
+    """
+    item = await runtime.store.aget(photon.HANDOFFS_NS, runtime.config["configurable"]["thread_id"])
+    line = " ".join(note.split())
+    if item is None or not item.value.get("to") or latest_clinician_message(runtime.state.get("messages") or []) is None or not line:
+        return _reply(runtime, "Not remembered: no clinician has written on this thread.")
+    path = notes_path(item.value["to"])  # the handle stays out of the model's context
+    old = await _read_text(path) or ""
+    if line.lower() not in old.lower():
+        await backend.awrite(path, old + ("\n" if old and not old.endswith("\n") else "") + f"- {line}\n")
+    return _reply(runtime, f"Remembered for this clinician's next pre-alert: {line}. Confirm it to them in one short sentence.")
+
+
+LEAD_TOOLS = [read_scan, recall_baseline, plan_hypotheses, forward_sim, fit_score, rank_fits, request_rescan, render_map, submit_result, send_prealert, record_reply, remember_preference]
 SIM_TOOLS = [forward_sim, fit_score]

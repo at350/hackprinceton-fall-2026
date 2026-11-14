@@ -56,7 +56,9 @@ One scan, turn by turn:
 3. **Rank and challenge.** `rank_fits` collects the four result files and applies the decision rule. In the same turn the skeptic reads the same files and tries to break the leading finding: other bleed types in the same place, neighbouring regions, the opposite side, or, when nothing fits, the smallest bleeds everywhere. Whatever it tests goes into the same pool of scores, so a real rival changes the outcome. It writes `/review.md`.
 4. **Re-scan if the read is poor.** If the outcome is "uncertain" and some spots had weak contact, the agent asks the medic to scan those spots again and waits. With the new readings it runs steps 2 and 3 again.
 5. **Propose.** The lead explains what the fit shows, writes the hand-off report to `/report.md`, and calls `submit_result`, which pauses for the medic.
-6. **Hand off.** If the medic approves a bleed, `send_prealert` sends the report and pauses again before anything goes out.
+6. **Hand off.** If the medic approves a bleed, `send_prealert` pauses again, naming the on-call clinician, and on approval texts them the map image and the pre-alert by iMessage. The report stays on record.
+7. **Talk to the clinician.** Their texts come back onto the same thread through the bridge; the lead answers from the scan, records ACCEPT or DECLINE, and remembers a standing preference ("always include contact quality") for their next pre-alert.
+8. **Re-scan.** When the medic approves a later scan of the same patient, the clinician who accepted the hand-off is texted the change since the first scan (built in code from the two approved results), instead of a new pre-alert. The result card says so before it is approved.
 
 About 35 s from **Run scan** to the first pause on all three mock scans.
 
@@ -89,8 +91,9 @@ The file system is how the agents work together, and the tools check it.
 | `/hypotheses.json` | `plan_hypotheses` | Region agents |
 | `/sims/<region>.json` | Each region agent | Skeptic; `rank_fits` (will not rank until all four exist) |
 | `/review.md` | Skeptic | `submit_result` (refuses a result with no second opinion on file) |
-| `/report.md` | Lead | `send_prealert` (sends it; refuses without it) |
-| `/patients/<id>/baseline.json` | `submit_result`, on approval | `read_scan`, `recall_baseline`, on the patient's next scan |
+| `/report.md` | Lead | `send_prealert` (keeps it on the hand-off record; refuses without it) |
+| `/patients/<id>/baseline.json` | `submit_result`, on approval | `read_scan`, `recall_baseline`, on the patient's next scan; the re-scan update |
+| `/clinicians/<handle>/notes.md` | `remember_preference`, when the clinician states a standing preference | `rank_fits`, which passes the on-call clinician's notes on before the pre-alert is written |
 
 It is a `CompositeBackend`:
 
@@ -99,6 +102,7 @@ It is a `CompositeBackend`:
 | Everything else above | `StateBackend` | One scan thread |
 | `/skills/` | `FilesystemBackend` on `agent/skills` | The repo |
 | `/patients/` | `StoreBackend` on a SQLite LangGraph Store (`data/lucid_store.sqlite`) | Across threads and restarts |
+| `/clinicians/` | `StoreBackend`, same Store, namespace `lucid/clinicians` | Across threads, patients and restarts |
 
 A patient's first approved scan becomes the baseline. The mock device returns a "15 minutes later" scan once a baseline exists, so running the temporal-bleed case twice for the same patient shows the comparison.
 
@@ -115,7 +119,9 @@ A patient's first approved scan becomes the baseline. The mock device returns a 
 | `request_rescan` | lead | Asks the medic to re-scan weak-contact spots and reads the new values. Gated; once per scan |
 | `render_map` | lead | A heatmap of any one hypothesis on the dashboard, when the medic asks to see an alternative |
 | `submit_result` | lead | Records the result. Gated. Takes region, volume and confidence from the scores, not from the model |
-| `send_prealert` | lead | The handoff, with `/report.md`. Gated, and only after a bleed result was approved. Simulated: there is no hospital link yet |
+| `send_prealert` | lead | The hand-off: the map image and the pre-alert, by iMessage, to the on-call clinician the approval card names. Gated, and only after a bleed result was approved. Without a Photon key it is recorded as simulated |
+| `record_reply` | lead | Records the clinician's ACCEPT or DECLINE. Not gated, but refuses unless their latest message says so in words (or a call's `decision:` field) |
+| `remember_preference` | lead | Appends a clinician's standing preference to their notes. Format or content only, never a clinical threshold |
 
 Plus the built-ins deepagents provides: `write_todos`, the file tools, and `task`.
 
@@ -126,6 +132,7 @@ Plus the built-ins deepagents provides: `write_todos`, the file tools, and `task
 | `skills/head-model` | What the readings mean, the tissue values in the model, the decision rule, and what a scan cannot show |
 | `skills/explain-to-medic` | How to say a result in plain words: shape, vocabulary, worked examples |
 | `skills/safety-wording` | Required and forbidden wording. "Screening aid, not a diagnosis." Never tell a patient they are fine |
+| `skills/text-a-clinician` | How to answer the receiving clinician by text: the number first, what the scan cannot show, accept and decline |
 
 ### Middleware
 
@@ -148,7 +155,7 @@ The UI connects with the LangGraph SDK (`useStream`) and reads thread state dire
 | `scan` | `ScanUpdate`: `status, region, volume_ml, confidence, map` (64x64). `status` is `"pending"` until the medic approves, `"rejected"` if they turn the proposal down |
 | `spots`, `reading` | The 8 scan spots and their raw readings |
 | `preview` | `{hypothesis_id, map}` while a result waits for approval |
-| `handoff` | `{to, message, report, sent_at, simulated}` after a pre-alert |
+| `handoff` | After a pre-alert: `{to, message, report, sent_at, simulated}`, plus `channel: "imessage"`, `status` and `reply` when it went by iMessage (`to` is masked). Live delivery, replies and calls are in the Store record below |
 
 Tools also emit `custom` stream events (`scan`, `sims_reset`, `sims`, `preview`, `handoff`, `activity`) so the grid fills and the subagents' steps show while they are still working. Pauses arrive as interrupts; the UI resumes with `{decisions: [{type: "approve"}]}` or `{type: "reject", message}`.
 
@@ -158,6 +165,25 @@ Two extra routes (`lucid/http.py`, mounted through `langgraph.json`) serve the s
 |---|---|
 | `GET /lucid/mesh` | The head mesh: nodes, triangles, tissue per triangle, the electrode pair each scan spot drives |
 | `GET /lucid/sim/{id}` | One hypothesis: blood and conductivity per triangle, and for each scan spot how much the bleed shifts the potential at every node |
+
+## Hand-off over iMessage
+
+`PHOTON_PROJECT_ID` and `PHOTON_API_KEY` in `../.env` turn it on. A clinician texts "On call" to the Photon number they were assigned; "Off" takes them off. Then run the bridge next to the agent server:
+
+```bash
+.venv/bin/python -m lucid.bridge                 # polls Photon every 2 s; LANGGRAPH_URL defaults to http://localhost:2024
+.venv/bin/python -m lucid.photon oncall +1...    # or put someone on call by hand (also: off, sync, roster)
+```
+
+The bridge answers roster texts in code, sends anyone without an open hand-off one fixed line, and puts the clinician's other texts on the scan thread for the lead to answer. It follows delivery and, after `LUCID_CALL_AFTER_S` (60) without a decision following the latest clinician text, calls the clinician when voice is configured; otherwise it tells the medic. A text decision takes precedence over a phone decision. While the thread waits at an approval card it holds the text and replies "The medic is deciding. I will reply shortly."
+
+| Store namespace, key | Value |
+|---|---|
+| `lucid/oncall`, handle | `{handle, space_id, agent_user_id, since, active}` |
+| `lucid/handoffs`, thread id | `{thread_id, patient_id, to, space_id, agent_user_id, sent_at, message, report, status, messages: [{id, kind, status}], reply, call, simulated}`; `status` is sent, delivered, read, failed or no_one_on_call; the bridge adds `delivered_at`, `clinician_at` and `no_reply_at`. A re-scan update appends `{id, kind: "update", status}` to the accepted record's `messages`; a re-scan on a new thread also gets its own record with `update_of` = the accepted thread |
+| `lucid/bridge`, `cursor` | `{since, handled: {message id: createdAt}}`, so a restart neither replays nor skips |
+
+On the thread, the bridge's messages are human messages tagged `[Receiving clinician, iMessage] ...`, `[Receiving clinician, phone call] ...` or `[Hand-off channel] ...`, and every run it starts carries metadata `{"source": "photon-bridge", "kind": "clinician" | "call" | "channel"}`. Answers to a channel event go to the medic only. `LUCID_PHOTON_PREFIX="[Lucid test] "` prefixes every text, for test servers.
 
 ## Configuration
 
@@ -179,7 +205,7 @@ Extended thinking is switched off: every step is a short tool turn, and thinking
 - The head model is a coarse 2D proxy. pyEIT solves an electrical-impedance forward problem; we map its boundary voltages to a coil signal in dB and add a simple NIR absorption term. It is not a validated solver for the device.
 - One bleed per hypothesis. Volumes are good to about 5 mL at best; neighbouring volumes often tie.
 - The uncertain mock scan is picked so that a re-scan resolves it; with other noise draws it can stay uncertain.
-- The pre-alert is simulated.
+- The pre-alert is real (iMessage through Photon's beta) but goes to a teammate playing the on-call surgeon. Without a Photon key it is simulated.
 
 ## Layout
 
@@ -191,6 +217,8 @@ agent/
     prompts.py          lead, region and skeptic prompts
     tools.py            the tools above
     decision.py         the decision rule
+    photon.py           Photon iMessage over HTTP, the on-call roster
+    bridge.py           the long-running process between Photon and the scan threads
     state.py            state keys the dashboard reads
     backend.py          the file system (state + skills + store)
     store.py            SQLite LangGraph Store
@@ -201,3 +229,11 @@ agent/
   data/                 precomputed lookup table and mesh
   tests/
 ```
+
+## Voice
+
+Voice escalation uses a Cartesia managed agent and a Photon SIP trunk. From `agent/`, run `.venv/bin/python -m lucid.voice setup`. The command creates or reuses the Cartesia agent and Photon default SIP profile, configures the Photon SIP profile, creates an outbound Cartesia trunk, and imports the Photon number. Inbound routing requires a working Cartesia inbound trunk and is currently not configured. Re-run it after setting `PHOTON_VOICE_NUMBER` to the purchased number in E.164 format; it resumes from the existing resources. Photon outbound access requires a payment method. The number must be active before placing a call.
+
+Root `.env` supplies `PHOTON_PROJECT_ID`, `PHOTON_API_KEY`, `CARTESIA_API_KEY`, and `PHOTON_VOICE_NUMBER`. Setup appends `PHOTON_SIP_USERNAME`, `PHOTON_SIP_PASSWORD`, `CARTESIA_INBOUND_USERNAME`, `CARTESIA_INBOUND_PASSWORD`, `CARTESIA_AGENT_ID`, and `CARTESIA_FROM_NUMBER_ID`; protect this file because it contains credentials. The Photon outbound password is shown only once. If the password is missing for an already-configured profile, setup stops for manual recovery rather than rotating it.
+
+After coordinating with the recipient, `.venv/bin/python -m lucid.voice call +1...` places one test call and prints its outcome. Calls incur charges. The voice module loads the root `.env` on import and checks it again when testing whether voice is enabled, so a running bridge can pick up IDs added by setup. Existing process environment values take precedence.
