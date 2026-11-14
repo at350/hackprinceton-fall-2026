@@ -95,7 +95,7 @@ export function bleedShape(type: BleedType, angle: number, volume: number) {
     switch (type) {
       case "epidural": {
         // Lens hugging the inner skull, short arc.
-        const dr = (0.88 - r) / (0.07 * s);
+        const dr = (0.86 - r) / (0.09 * s);
         const dt = da / (0.32 * s);
         return Math.exp(-(dr * dr + dt * dt) / 2);
       }
@@ -126,7 +126,7 @@ export function truthLikelihood(x: number, y: number) {
 function spotSensitivity(spot: number, x: number, y: number) {
   const p = pointAt(spot * 45);
   const d = Math.hypot(x - p.x, y - p.y);
-  return Math.exp(-(d * d) / (2 * 0.42 * 0.42));
+  return Math.exp(-(d * d) / (2 * 0.5 * 0.5));
 }
 
 /** Cumulative 64x64 likelihood map over the finished spots. 0 = not scanned. */
@@ -137,7 +137,7 @@ export function scanMap(doneSpots: number[]): number[][] {
     let cov = 0;
     for (const s of doneSpots) cov = Math.max(cov, spotSensitivity(s, x, y));
     const reveal = Math.min(1, Math.max(0, (cov - 0.18) / 0.35));
-    return reveal * truthLikelihood(x, y);
+    return reveal * Math.max(0.07, truthLikelihood(x, y));
   });
 }
 

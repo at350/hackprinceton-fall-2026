@@ -181,6 +181,20 @@ export class DemoStore {
     this.emit();
   }
 
+  /** Jump to a point in the story (dev aid: window.__demo.seek(60000)). */
+  seek(ms: number) {
+    this.restart();
+    while (this.applied < this.events.length && this.events[this.applied].at <= ms) {
+      const e = this.events[this.applied++];
+      this.set({ t: e.at });
+      e.run(this);
+    }
+    this.set({ t: ms });
+    this.updateSims(ms);
+    this.set({ messages: this.state.messages.map((m) => ({ ...m, shown: m.text.length })) });
+    this.emit();
+  }
+
   togglePause() {
     this.set({ playing: !this.state.playing });
     this.emit();
@@ -416,3 +430,6 @@ function buildStory(): StoryEvent[] {
 
 // One store per browser tab.
 export const demo = typeof window !== "undefined" ? new DemoStore() : (null as unknown as DemoStore);
+if (typeof window !== "undefined" && process.env.NODE_ENV !== "production") {
+  (window as unknown as { __demo: DemoStore }).__demo = demo;
+}

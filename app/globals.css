@@ -16,7 +16,7 @@
   --safe-text: #93b1ff;
   --line: rgba(255, 255, 255, 0.09);
   --line-strong: rgba(255, 255, 255, 0.18);
-  --raised: rgba(255, 255, 255, 0.045);
+  --raised: rgba(255, 255, 255, 0.06);
 
   /* Motion, taken from the references. */
   --ease-hover: cubic-bezier(0.23, 1, 0.32, 1); /* Koniku */
@@ -86,7 +86,7 @@ body {
 /* Panels sit on the backdrop; a little grain on the surface too. */
 .surface {
   position: relative;
-  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 12px;
 }
