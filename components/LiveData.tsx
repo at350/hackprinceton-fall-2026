@@ -126,23 +126,75 @@ function ChartRow({ label, unit, value, children }: { label: string; unit: strin
   );
 }
 
-/** Attitude indicator: horizon tilts with roll and shifts with pitch. */
+const TILT_MAX = 40; // degrees at the rim
+const DIAL_R = 30;
+const TICKS = Array.from({ length: 36 }, (_, i) => i * 10);
+
+/** Bubble level: where the device is pointing, read like an instrument. */
 function Tilt({ pitch, roll }: { pitch: number; roll: number }) {
+  // Bubble position, clamped to the dial.
+  let bx = (roll / TILT_MAX) * (DIAL_R - 6);
+  let by = (-pitch / TILT_MAX) * (DIAL_R - 6);
+  const d = Math.hypot(bx, by);
+  if (d > DIAL_R - 6) {
+    bx *= (DIAL_R - 6) / d;
+    by *= (DIAL_R - 6) / d;
+  }
+  const ring = (deg: number) => (deg / TILT_MAX) * (DIAL_R - 6);
   return (
-    <div className="flex items-center gap-3">
-      <svg width="28" height="28" viewBox="-17 -17 34 34" aria-hidden>
-        <circle r="16" fill="none" stroke="var(--line-strong)" />
-        <g transform={`rotate(${-roll}) translate(0 ${Math.max(-10, Math.min(10, pitch * 0.4))})`} style={{ transition: "transform 120ms linear" }}>
-          <line x1="-12" x2="12" y1="0" y2="0" stroke="var(--text)" strokeWidth="1.2" />
+    <div className="flex items-center gap-3.5">
+      <svg width="52" height="52" viewBox="-34 -34 68 68" aria-hidden>
+        <defs>
+          <radialGradient id="dial-face" cx="0.5" cy="0.4" r="0.6">
+            <stop offset="0" stopColor="#2a3039" />
+            <stop offset="1" stopColor="#12161b" />
+          </radialGradient>
+          <radialGradient id="bubble" cx="0.35" cy="0.3" r="0.75">
+            <stop offset="0" stopColor="#d9f6fd" />
+            <stop offset="0.35" stopColor="#5fd6ef" />
+            <stop offset="1" stopColor="#127f99" />
+          </radialGradient>
+        </defs>
+        {/* Bezel and face */}
+        <circle r={DIAL_R + 3} fill="#0a0c10" stroke="rgba(255,255,255,0.12)" strokeWidth="0.75" />
+        <circle r={DIAL_R} fill="url(#dial-face)" />
+        {/* Ticks every 10°, majors on the axes */}
+        {TICKS.map((a) => {
+          const major = a % 90 === 0;
+          const r1 = DIAL_R - (major ? 4.5 : 2.5);
+          const t = (a * Math.PI) / 180;
+          return (
+            <line
+              key={a}
+              x1={Math.sin(t) * r1}
+              y1={-Math.cos(t) * r1}
+              x2={Math.sin(t) * (DIAL_R - 0.8)}
+              y2={-Math.cos(t) * (DIAL_R - 0.8)}
+              stroke={major ? "rgba(237,238,240,0.95)" : "rgba(237,238,240,0.4)"}
+              strokeWidth={major ? 1.2 : 0.7}
+            />
+          );
+        })}
+        {/* 10° and 20° rings, crosshair */}
+        <circle r={ring(10)} fill="rgba(34,195,230,0.1)" stroke="rgba(255,255,255,0.28)" strokeWidth="0.6" />
+        <circle r={ring(20)} fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="0.6" strokeDasharray="1.2 1.6" />
+        <line x1={-DIAL_R + 6} x2={DIAL_R - 6} stroke="rgba(255,255,255,0.18)" strokeWidth="0.5" />
+        <line y1={-DIAL_R + 6} y2={DIAL_R - 6} stroke="rgba(255,255,255,0.18)" strokeWidth="0.5" />
+        {/* Bubble */}
+        <g style={{ transform: `translate(${bx}px, ${by}px)`, transition: "transform 160ms linear" }}>
+          <circle r="6.5" fill="rgba(34,195,230,0.2)" />
+          <circle r="4.6" fill="url(#bubble)" stroke="rgba(217,246,253,0.6)" strokeWidth="0.4" />
+          <circle cx="-1.4" cy="-1.5" r="1.1" fill="rgba(255,255,255,0.9)" />
         </g>
-        <circle r="1.6" fill="var(--primary)" />
+        {/* Glass rim highlight */}
+        <path d={`M ${-DIAL_R * 0.8} ${-DIAL_R * 0.55} A ${DIAL_R} ${DIAL_R} 0 0 1 ${DIAL_R * 0.55} ${-DIAL_R * 0.8}`} fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="0.8" strokeLinecap="round" />
       </svg>
-      <div className="flex gap-3 whitespace-nowrap text-[13px] text-muted">
-        <span>
-          Pitch <span className="inline-block w-11 font-medium text-text">{pitch.toFixed(1)}°</span>
+      <div className="flex flex-col gap-1 whitespace-nowrap text-[13px] leading-none text-muted">
+        <span className="flex justify-between gap-3">
+          Pitch <span className="w-12 text-right font-medium text-text">{pitch.toFixed(1)}°</span>
         </span>
-        <span>
-          Roll <span className="inline-block w-11 font-medium text-text">{roll.toFixed(1)}°</span>
+        <span className="flex justify-between gap-3">
+          Roll <span className="w-12 text-right font-medium text-text">{roll.toFixed(1)}°</span>
         </span>
       </div>
     </div>
@@ -160,7 +212,7 @@ export function LiveData() {
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6, ease: EASE_ENTER, delay: 0.1 }}
-      className="surface raised relative flex h-[268px] shrink-0 flex-col gap-2 p-4"
+      className="surface raised relative flex h-[284px] shrink-0 flex-col gap-2 p-4"
     >
       <ChartRow label="Coil" unit="dB" value={latest ? latest.coil_db.toFixed(1) : "--"}>
         <SignalChart series="coil" minSpan={3} />
