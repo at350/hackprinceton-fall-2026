@@ -52,3 +52,5 @@ class LucidState(DeepAgentState):
     reading: NotRequired[Annotated[dict | None, last]]
     baseline: NotRequired[Annotated[dict | None, last]]
     null_fit: NotRequired[Annotated[float | None, last]]
+    # How many times the medic has re-scanned weak spots for this scan (at most once).
+    rescans: NotRequired[Annotated[int, last]]

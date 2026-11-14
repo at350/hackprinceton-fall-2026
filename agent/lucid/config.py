@@ -12,7 +12,7 @@ os.environ.setdefault("LANGSMITH_PROJECT", "lucid")
 # The model. One line to switch providers, e.g. for the Amazon track:
 #   LUCID_MODEL="bedrock_converse:us.anthropic.claude-sonnet-4-5-20250929-v1:0"  (needs langchain-aws)
 MODEL = os.getenv("LUCID_MODEL", "anthropic:claude-sonnet-5")
-# Region agents do a narrow, mechanical job, so they run on the small fast model.
+# Region agents and the skeptic do narrow, mechanical work, so they run on the small fast model.
 REGION_MODEL = os.getenv("LUCID_REGION_MODEL", "anthropic:claude-haiku-5-5")
 
 
@@ -35,11 +35,14 @@ STORE_DB = os.getenv("LUCID_STORE_DB", str(AGENT_DIR / "data" / "lucid_store.sql
 MIN_FIT = 0.80  # best fit below this: uncertain
 MIN_MARGIN = 0.05  # best fit must beat every other region, and the no-bleed model, by this much
 
-HYPOTHESIS_TARGET = 100  # how many hypotheses the lead plans per scan
+# The search: a coarse sweep first, then the region agents add finer volumes where it points.
+COARSE_VOLUMES = (10, 20, 30, 40)  # mL; 3 types x 8 regions x 4 volumes = 96 hypotheses
+MAX_NEW_PER_CALL = 12  # refinements one forward_sim call may add
+MAX_HYPOTHESES = 140  # per scan, coarse + refined + the skeptic's challengers
 
 # The lookup table answers instantly. Sim events are paced so a person can watch
 # the grid fill; set to 0 for tests.
-SIM_PACE_S = float(os.getenv("LUCID_SIM_PACE_S", "0.06"))
+SIM_PACE_S = float(os.getenv("LUCID_SIM_PACE_S", "0.03"))
 
 DEFAULT_SCAN = "temporal_bleed"
 DEFAULT_PATIENT = "demo-patient"
