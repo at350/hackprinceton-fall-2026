@@ -41,11 +41,35 @@ export interface ScanSpot {
   peak: number | null; // max likelihood seen at this spot
 }
 
+/** The measured scan: raw values per spot (live mode). */
+export interface ScanReading {
+  patient_id: string;
+  taken_at: string;
+  spots: { index: number; name: string; angle: number; coil_db: number; nir: number; quality: "good" | "weak" }[];
+}
+
 // ---- Simulations ----------------------------------------------------------
 
 export type BleedType = "epidural" | "subdural" | "intraparenchymal";
 export type SimStatus = "queued" | "running" | "done";
 export type RegionName = "frontal" | "temporal" | "parietal" | "occipital";
+
+// "coarse": the planned sweep. "refine": added by a region agent around a good fit.
+// "review": added by the skeptic when it challenges the leading finding.
+export type SimPass = "coarse" | "refine" | "review";
+
+/** One value per scan spot. */
+export interface SpotReading {
+  coil_db: number[];
+  nir: number[];
+}
+
+/** Simulation minus scan per spot, in units of expected error (signed). */
+export interface SimMisfit {
+  coil: number[];
+  nir: number[];
+  weight: number[]; // below 1 where contact was weak
+}
 
 export interface Simulation {
   id: string;
@@ -57,6 +81,12 @@ export interface Simulation {
   map: number[][]; // 32x32
   agent: RegionName;
   progress: number; // 0-1 while running
+  // Live mode only.
+  pass?: SimPass;
+  by?: string; // who ran it: a region agent or "skeptic"; unset while queued
+  note?: string; // the agent's own words on why it ran this
+  reading?: SpotReading; // the simulated reading, once running
+  misfit?: SimMisfit; // once done
 }
 
 export interface RegionAgent {
@@ -79,6 +109,17 @@ export interface AgentStep {
   parent?: string; // id of the to-do a tool call belongs to
 }
 
+/** One thing a region agent or the skeptic did (live mode). */
+export interface AgentActivity {
+  agent: string;
+  at: number; // epoch ms
+  tool: string | null; // null: the agent's final reply, in `text`
+  path?: string | null;
+  note?: string | null;
+  ids?: string[];
+  text?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: "agent" | "medic";
@@ -91,6 +132,8 @@ export interface ApprovalRequest {
   action: string;
   title?: string; // card heading
   detail?: string; // one line under it
+  approveLabel?: string; // default "Approve"
+  rejectLabel?: string; // default "Reject"
   state: "pending" | "approved" | "rejected";
 }
 
@@ -111,7 +154,9 @@ export interface DashState {
   spots: ScanSpot[];
   currentSpot: number | null;
   scan: ScanUpdate | null;
+  reading?: ScanReading | null; // live mode
   sims: Simulation[];
+  activity?: Record<string, AgentActivity[]>; // live mode: per agent, oldest first
   agents: RegionAgent[];
   steps: AgentStep[];
   messages: ChatMessage[];

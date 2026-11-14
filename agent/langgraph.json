@@ -1,6 +1,15 @@
 {
-  "dependencies": ["."],
-  "graphs": { "lucid": "./lucid/agent.py:agent" },
-  "store": { "path": "./lucid/store.py:create_store" },
-  "env": "../.env"
+  "dependencies": [
+    "."
+  ],
+  "graphs": {
+    "lucid": "./lucid/agent.py:agent"
+  },
+  "store": {
+    "path": "./lucid/store.py:create_store"
+  },
+  "env": "../.env",
+  "http": {
+    "app": "./lucid/http.py:app"
+  }
 }

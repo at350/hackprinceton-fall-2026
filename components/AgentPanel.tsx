@@ -107,7 +107,8 @@ function Status() {
   const current = todos.find((s) => s.state === "running");
   const runningTool = [...tools].reverse().find((s) => s.state === "running");
   const busy = !waiting && (streaming || !!current || !!runningTool);
-  const label = waiting ? "Waiting for your approval" : runningTool?.label ?? (streaming ? "Writing" : current?.label ?? "Idle");
+  const rescan = useDash((s) => s.approval?.approveLabel === "Re-scanned");
+  const label = waiting ? (rescan ? "Waiting for the re-scan" : "Waiting for your approval") : runningTool?.label ?? (streaming ? "Writing" : current?.label ?? "Idle");
   const stepNo = current ? todos.indexOf(current) + 1 : done;
 
   // Elapsed time restarts whenever the agent starts something new.
@@ -245,7 +246,7 @@ function Approval() {
               className="flex h-10 items-center gap-1.5 rounded-[10px] px-4 text-[13.5px] font-medium text-text transition-colors duration-100 hover:bg-[rgba(255,255,255,0.06)] active:scale-[0.97]"
             >
               <IconX size={13} />
-              Reject
+              {approval.rejectLabel ?? "Reject"}
             </button>
             <button
               type="button"
@@ -253,7 +254,7 @@ function Approval() {
               className="flex h-10 items-center gap-1.5 rounded-[10px] bg-primary px-5 text-[13.5px] font-semibold text-[#04141a] transition-transform duration-150 active:scale-[0.97]"
             >
               <IconCheck size={13} strokeWidth={2.2} />
-              Approve
+              {approval.approveLabel ?? "Approve"}
             </button>
           </div>
         </motion.div>
