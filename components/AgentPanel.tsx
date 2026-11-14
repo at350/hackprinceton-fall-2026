@@ -5,126 +5,228 @@ import { useEffect, useRef, useState } from "react";
 import { demo } from "@/lib/demo";
 import type { AgentStep, ChatMessage } from "@/lib/types";
 import { useDash } from "@/lib/useDash";
-import { IconArrowUp, IconCheck, IconHand, IconTool, IconX, Spinner } from "./icons";
-import { EASE_ENTER, Panel } from "./ui";
+import { IconArrowUp, IconCheck, IconTool, IconX, Spinner } from "./icons";
 
-function StepRow({ step }: { step: AgentStep }) {
-  const color = step.state === "pending" ? "var(--muted)" : "var(--text)";
+// Beautiful UI motion.
+const EASE_UI = [0.23, 1, 0.32, 1] as const;
+
+// Which to-do each tool call belongs to.
+const PARENT: Record<string, string> = {
+  "tool-read": "todo-scan",
+  "tool-map": "todo-map",
+  "tool-sim": "todo-sims",
+  "tool-fit": "todo-rank",
+  "tool-alert": "todo-approve",
+};
+
+function DotGrid() {
+  return (
+    <span className="dot-grid text-primary" aria-hidden>
+      {Array.from({ length: 9 }, (_, i) => (
+        <span key={i} />
+      ))}
+    </span>
+  );
+}
+
+function StatusLine() {
+  const steps = useDash((s) => s.steps);
+  const streaming = useDash((s) => s.messages.some((m) => m.shown < m.text.length));
+  const waiting = useDash((s) => s.approval?.state === "pending");
+  const t = useDash((s) => Math.floor(s.t / 1000));
+  const running = [...steps].reverse().find((s) => s.state === "running" && s.kind === "tool") ?? steps.find((s) => s.state === "running");
+  const busy = !waiting && (streaming || !!running);
+  const label = running?.label ?? "Writing";
+  // Elapsed time restarts whenever the agent starts something new.
+  const [since, setSince] = useState({ key: "", t });
+  const key = busy ? label : "";
+  if (since.key !== key) setSince({ key, t });
+  const elapsed = t - since.t;
+
+  return (
+    <div className="flex h-11 shrink-0 items-center gap-2.5 px-4">
+      {waiting ? (
+        <>
+          <span className="size-2 rounded-full bg-primary" />
+          <span className="text-[13px] font-medium text-text">Waiting for your approval</span>
+        </>
+      ) : busy ? (
+        <>
+          <DotGrid />
+          <span className="shimmer text-[13px] font-medium">{label}</span>
+          <span className="ml-auto font-mono text-[12px] text-muted">{elapsed}s</span>
+        </>
+      ) : (
+        <>
+          <span className="size-2 rounded-full bg-muted opacity-60" />
+          <span className="text-[13px] text-muted">{steps.length ? "Idle" : "Starts when the device connects"}</span>
+        </>
+      )}
+    </div>
+  );
+}
+
+function StepIcon({ step }: { step: AgentStep }) {
+  if (step.state === "running") return <span className="text-primary"><Spinner size={14} /></span>;
+  if (step.state === "done")
+    return (
+      <span className="grid size-[15px] place-items-center rounded-full bg-[rgba(255,255,255,0.14)] text-text">
+        <IconCheck size={10} strokeWidth={2.2} />
+      </span>
+    );
+  return <span className="size-[15px] rounded-full border border-[rgba(255,255,255,0.18)]" />;
+}
+
+/** Beautiful UI tool-call row: icon, plain action, muted detail chip. */
+function ToolRow({ step }: { step: AgentStep }) {
   return (
     <motion.li
-      layout
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: EASE_ENTER }}
-      className="flex h-[26px] items-center gap-2.5 text-[13px]"
-      style={{ color }}
+      transition={{ duration: 0.3, ease: EASE_UI }}
+      className="flex h-7 items-center gap-2 text-[13px] text-muted"
     >
-      <span className="grid size-4 shrink-0 place-items-center">
-        {step.state === "done" ? (
-          step.kind === "todo" ? (
-            <span className="grid size-[14px] place-items-center rounded-full bg-text text-bg">
-              <IconCheck size={10} strokeWidth={2.2} />
-            </span>
-          ) : (
-            <IconTool size={14} className="text-muted" />
-          )
-        ) : step.state === "running" ? (
-          <span className="text-primary">
-            <Spinner size={14} />
-          </span>
-        ) : (
-          <span className="size-[13px] rounded-full border border-dashed border-line-strong" />
-        )}
-      </span>
-      <span className={`truncate ${step.kind === "tool" ? "text-muted" : ""} ${step.state === "done" && step.kind === "todo" ? "text-muted line-through decoration-line-strong" : ""}`}>
-        {step.label}
-      </span>
-      {step.detail && <span className="ml-auto shrink-0 text-[12px] text-muted">{step.detail}</span>}
+      {step.state === "running" ? <span className="text-primary"><Spinner size={12} /></span> : <IconTool size={13} />}
+      <span className="truncate">{step.label}</span>
+      {step.detail && (
+        <span className="ml-auto shrink-0 rounded-[6px] bg-[rgba(255,255,255,0.06)] px-1.5 py-0.5 font-mono text-[11.5px] text-muted">
+          {step.detail}
+        </span>
+      )}
     </motion.li>
   );
 }
 
-function Steps({ steps }: { steps: AgentStep[] }) {
+/** Beautiful UI "thinking" disclosure: plan with tool calls nested under each to-do. */
+function Trace({ steps }: { steps: AgentStep[] }) {
+  const [open, setOpen] = useState(true);
   const todos = steps.filter((s) => s.kind === "todo");
-  const tools = steps.filter((s) => s.kind === "tool");
   const done = todos.filter((s) => s.state === "done").length;
-  const ref = useRef<HTMLDivElement>(null);
+  const tools = steps.filter((s) => s.kind === "tool");
+  const active = todos.find((s) => s.state === "running") ?? [...todos].reverse().find((s) => s.state === "done");
+  const scroller = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
-    ref.current?.scrollTo({ top: ref.current.scrollHeight, behavior: "smooth" });
-  }, [steps.length]);
-  if (!steps.length) return null;
+    const el = scroller.current;
+    const row = el?.querySelector<HTMLElement>("[data-active]");
+    if (el && row) el.scrollTo({ top: row.offsetTop - 8, behavior: "smooth" });
+  }, [active?.id]);
+
+  if (!todos.length) return null;
   return (
-    <div className="mx-4 shrink-0 rounded-[12px] border border-line bg-raised px-3 pt-2.5 pb-2">
-      <div ref={ref} className="scroll-thin max-h-[118px] overflow-y-auto">
-        <ul>
-          {todos.map((s) => (
-            <StepRow key={s.id} step={s} />
-          ))}
-        </ul>
-        {tools.length > 0 && (
-          <ul className="mt-1 border-l border-line pl-3">
-            {tools.map((s) => (
-              <StepRow key={s.id} step={s} />
-            ))}
-          </ul>
-        )}
+    <div className="mx-3 shrink-0 rounded-[12px] border border-[rgba(255,255,255,0.06)] bg-[rgba(0,0,0,0.18)]">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex h-9 w-full items-center gap-2 rounded-[12px] px-3 text-[13px] text-text transition-colors duration-100 hover:bg-[rgba(255,255,255,0.03)]"
+      >
+        <span className="font-medium">Plan</span>
+        <span className="text-muted">
+          {done} of {todos.length} · {tools.length} tool calls
+        </span>
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 16 16"
+          className="ml-auto text-muted transition-transform duration-300"
+          style={{ transform: open ? "rotate(180deg)" : "none" }}
+          aria-hidden
+        >
+          <path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      <div
+        className="grid transition-[grid-template-rows,opacity] duration-[400ms]"
+        style={{ gridTemplateRows: open ? "1fr" : "0fr", opacity: open ? 1 : 0, transitionTimingFunction: "cubic-bezier(0.23,1,0.32,1)" }}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <div ref={scroller} className="scroll-thin relative max-h-[164px] overflow-y-auto px-3 pb-2.5">
+            <ul>
+              {todos.map((todo) => {
+                const kids = tools.filter((t) => PARENT[t.id] === todo.id);
+                const isActive = todo.id === active?.id;
+                return (
+                  <li key={todo.id} data-active={isActive || undefined}>
+                    <div className={`flex h-7 items-center gap-2.5 text-[13px] ${todo.state === "pending" ? "text-muted" : "text-text"}`}>
+                      <StepIcon step={todo} />
+                      <span className="truncate">{todo.label}</span>
+                    </div>
+                    {kids.length > 0 && (isActive || todo.state === "running") && (
+                      <ul className="ml-[7px] border-l border-[rgba(255,255,255,0.08)] pl-4">
+                        {kids.map((k) => (
+                          <ToolRow key={k.id} step={k} />
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-function Message({ m, showLabel }: { m: ChatMessage; showLabel: boolean }) {
+/** Streams word by word with a slim cursor. */
+function Message({ m }: { m: ChatMessage }) {
   const streaming = m.shown < m.text.length;
-  const text = m.text.slice(0, Math.floor(m.shown));
+  let text = m.text;
+  if (streaming) {
+    const cut = m.text.lastIndexOf(" ", Math.floor(m.shown));
+    text = m.text.slice(0, Math.max(0, cut));
+  }
   if (m.role === "medic") {
     return (
-      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: EASE_ENTER }} className="flex justify-end">
-        <p className="max-w-[85%] rounded-[12px] rounded-br-[4px] bg-[rgba(255,255,255,0.08)] px-3 py-2 text-[14px] leading-[1.45] text-text">{m.text}</p>
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: EASE_UI }} className="flex justify-end">
+        <p className="max-w-[85%] rounded-[14px] bg-[rgba(255,255,255,0.08)] px-3 py-2 text-[13.5px] leading-[1.5] text-text">{m.text}</p>
       </motion.div>
     );
   }
   return (
-    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: EASE_ENTER }} className="flex flex-col gap-1.5">
-      <p className="text-[14px] leading-[1.5] text-text">
-        {text}
-        {streaming && <span className="ml-0.5 inline-block h-[14px] w-[2px] translate-y-[2px] bg-primary align-baseline" />}
-      </p>
-    </motion.div>
+    <motion.p
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, ease: EASE_UI }}
+      className="text-[13.5px] leading-[1.6] text-[rgba(237,238,240,0.92)]"
+    >
+      {text}
+      {streaming && <span className="ml-0.5 inline-block h-[13px] w-[1.5px] translate-y-[2px] bg-text" />}
+    </motion.p>
   );
 }
 
+/** Beautiful UI approval card, inline when the agent pauses. */
 function Approval() {
   const approval = useDash((s) => s.approval);
   return (
     <AnimatePresence>
       {approval?.state === "pending" && (
         <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 8 }}
-          transition={{ duration: 0.45, ease: EASE_ENTER }}
-          className="mx-4 mb-3 rounded-[12px] border border-primary bg-[rgba(34,195,230,0.06)] p-3"
+          initial={{ opacity: 0, y: 10, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 6 }}
+          transition={{ duration: 0.38, ease: EASE_UI }}
+          className="mx-3 mb-2 rounded-[14px] border border-[rgba(255,255,255,0.08)] bg-[rgba(8,10,13,0.7)] p-3.5"
         >
-          <div className="flex items-center gap-2 text-[13px] font-medium text-primary">
-            <IconHand size={15} />
-            Needs your approval
-          </div>
-          <p className="mt-1.5 text-[14px] text-text">{approval.action}</p>
-          <div className="mt-3 grid grid-cols-2 gap-2">
+          <p className="text-[14px] font-medium text-text">Send pre-alert to the trauma center?</p>
+          <p className="mt-1 text-[13px] leading-[1.5] text-muted">Includes the map, best fit (epidural, L temporal, 22 mL) and the scan log.</p>
+          <div className="mt-3 flex justify-end gap-2">
             <button
               type="button"
               onClick={() => demo.resolveApproval(false)}
-              className="flex h-11 items-center justify-center gap-2 rounded-[10px] border border-line-strong text-[14px] font-medium text-text transition-colors duration-200 [transition-timing-function:var(--ease-hover)] hover:bg-raised"
+              className="flex h-10 items-center gap-1.5 rounded-[10px] px-4 text-[13.5px] font-medium text-text transition-colors duration-100 hover:bg-[rgba(255,255,255,0.06)] active:scale-[0.97]"
             >
-              <IconX size={14} />
+              <IconX size={13} />
               Reject
             </button>
             <button
               type="button"
               onClick={() => demo.resolveApproval(true)}
-              className="flex h-11 items-center justify-center gap-2 rounded-[10px] bg-primary text-[14px] font-semibold text-bg transition-opacity duration-200 hover:opacity-90"
+              className="flex h-10 items-center gap-1.5 rounded-[10px] bg-primary px-5 text-[13.5px] font-semibold text-[#04141a] transition-transform duration-150 active:scale-[0.97]"
             >
-              <IconCheck size={14} strokeWidth={2} />
+              <IconCheck size={13} strokeWidth={2.2} />
               Approve
             </button>
           </div>
@@ -134,6 +236,7 @@ function Approval() {
   );
 }
 
+/** Beautiful UI prompt bar: inset rounded field, 28px send button. */
 function Composer() {
   const [text, setText] = useState("");
   return (
@@ -143,22 +246,22 @@ function Composer() {
         demo.sendMedic(text);
         setText("");
       }}
-      className="flex shrink-0 items-center gap-2 border-t border-line p-3"
+      className="mx-3 mb-3 flex shrink-0 items-center gap-1.5 rounded-[14px] border border-[rgba(255,255,255,0.08)] bg-[rgba(0,0,0,0.22)] p-1.5 pl-3 transition-colors duration-150 focus-within:border-[rgba(255,255,255,0.18)]"
     >
       <input
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder="Ask the agent"
+        placeholder="Ask about this scan"
         aria-label="Message the agent"
-        className="h-11 min-w-0 flex-1 rounded-[10px] border border-line bg-raised px-3 text-[14px] text-text outline-none transition-colors duration-200 placeholder:text-muted focus:border-line-strong"
+        className="h-9 min-w-0 flex-1 bg-transparent text-[13.5px] text-text outline-none placeholder:text-muted"
       />
       <button
         type="submit"
         aria-label="Send"
         disabled={!text.trim()}
-        className="grid size-11 shrink-0 place-items-center rounded-[10px] bg-text text-bg transition-opacity duration-200 disabled:opacity-30"
+        className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-text text-bg transition-[opacity,transform] duration-150 active:scale-[0.94] disabled:opacity-25"
       >
-        <IconArrowUp size={16} strokeWidth={1.8} />
+        <IconArrowUp size={15} strokeWidth={1.8} />
       </button>
     </form>
   );
@@ -167,9 +270,6 @@ function Composer() {
 export function AgentPanel() {
   const steps = useDash((s) => s.steps);
   const messages = useDash((s) => s.messages);
-  const approval = useDash((s) => s.approval);
-  const busy = messages.some((m) => m.shown < m.text.length) || steps.some((s) => s.state === "running");
-  const waiting = approval?.state === "pending";
   const scroller = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -177,36 +277,22 @@ export function AgentPanel() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages]);
 
-  const state = waiting
-    ? { text: "Waiting for you", el: <IconHand size={13} />, color: "var(--primary)" }
-    : busy
-      ? { text: "Working", el: <Spinner size={12} />, color: "var(--primary)" }
-      : { text: "Idle", el: <span className="size-1.5 rounded-full bg-current" />, color: "var(--muted)" };
-
   return (
-    <Panel
-      delay={0.15}
-      className="min-h-0 flex-1"
-      right={
-        <span className="flex items-center gap-1.5 text-[12px] font-medium" style={{ color: state.color }}>
-          {state.el}
-          {state.text}
-        </span>
-      }
+    <motion.section
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.6, ease: [0.08, 0.78, 0.56, 1], delay: 0.15 }}
+      className="surface raised flex min-h-0 flex-1 flex-col overflow-hidden"
     >
-      <div className="absolute inset-0 flex flex-col">
-        <Steps steps={steps} />
-        <div ref={scroller} className="scroll-thin flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-3">
-          {messages.length === 0 && (
-            <p className="m-auto text-center text-[13px] text-muted">The agent starts when the device connects.</p>
-          )}
-          {messages.map((m, i) => (
-            <Message key={m.id} m={m} showLabel={i === 0 || messages[i - 1].role !== m.role} />
-          ))}
-        </div>
-        <Approval />
-        <Composer />
+      <StatusLine />
+      <Trace steps={steps} />
+      <div ref={scroller} className="scroll-thin flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-4 py-3">
+        {messages.map((m) => (
+          <Message key={m.id} m={m} />
+        ))}
       </div>
-    </Panel>
+      <Approval />
+      <Composer />
+    </motion.section>
   );
 }
