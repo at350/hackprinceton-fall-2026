@@ -11,13 +11,14 @@ import { EASE_ENTER, EASE_MASK, SCAN_STATUS } from "./ui";
 function Verdict({ scan }: { scan: ScanUpdate | null }) {
   const s = scan ? SCAN_STATUS[scan.status] : null;
   return (
-    <div className="relative h-[60px] overflow-hidden">
+    // Clip vertically only (for the mask-up swap) so the text is never cut horizontally.
+    <div className="relative h-[60px] w-full" style={{ overflowX: "visible", overflowY: "clip" }}>
       <AnimatePresence mode="popLayout" initial={false}>
         <motion.h1
           key={scan?.status ?? "none"}
-          initial={{ y: "100%" }}
+          initial={{ y: "135%" }}
           animate={{ y: "0%" }}
-          exit={{ y: "-100%" }}
+          exit={{ y: "-135%" }}
           transition={{ duration: 0.6, ease: EASE_MASK }}
           className="flex items-center gap-3"
           style={{ color: s?.color ?? "var(--muted)" }}
@@ -45,13 +46,13 @@ function Summary({ scan, done }: { scan: ScanUpdate | null; done: number }) {
         ];
   const key = parts.join("|");
   return (
-    <div className="relative h-7 overflow-hidden">
+    <div className="relative h-7 w-full" style={{ overflowX: "visible", overflowY: "clip" }}>
       <AnimatePresence mode="popLayout" initial={false}>
         <motion.p
           key={key}
-          initial={{ y: "100%", opacity: 0 }}
+          initial={{ y: "135%", opacity: 0 }}
           animate={{ y: "0%", opacity: 1 }}
-          exit={{ y: "-100%", opacity: 0 }}
+          exit={{ y: "-135%", opacity: 0 }}
           transition={{ duration: 0.32, ease: EASE_MASK }}
           className="flex items-center gap-2.5 whitespace-nowrap text-[20px] leading-7 tracking-[-0.02em]"
         >
@@ -74,7 +75,7 @@ function Progress({ spots, current }: { spots: ScanSpot[]; current: number | nul
   const cur = current === null ? null : spots[current];
   const text = cur ? `Spot ${cur.index + 1} · ${cur.name}` : rescan ? `Re-scan spot ${rescan.index + 1}` : `${done} of 8 spots`;
   return (
-    <div className="flex items-center gap-2.5 pt-2 text-[14px] text-muted">
+    <div className="flex shrink-0 items-center gap-2.5 pt-2 text-[14px] text-muted">
       <span className={cur ? "text-primary" : rescan ? "text-uncertain" : "text-text"}>
         <Ring progress={done / 8} size={16} />
       </span>
@@ -98,7 +99,7 @@ export function ScanTab() {
         transition={{ duration: 0.6, ease: EASE_ENTER, delay: 0.2 }}
         className="flex shrink-0 items-start justify-between gap-6"
       >
-        <div className="flex flex-col gap-3">
+        <div className="flex min-w-0 flex-1 flex-col gap-3">
           <Verdict scan={scan} />
           <Summary scan={scan} done={done} />
         </div>
