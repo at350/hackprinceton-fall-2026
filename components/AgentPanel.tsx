@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { demo } from "@/lib/demo";
+import { LIVE } from "@/lib/live";
 import type { AgentStep, ChatMessage } from "@/lib/types";
 import { useDash } from "@/lib/useDash";
 import { IconArrowUp, IconCheck, IconChevronDown, IconTool, IconX } from "./icons";
@@ -10,7 +11,7 @@ import { IconArrowUp, IconCheck, IconChevronDown, IconTool, IconX } from "./icon
 // Beautiful UI motion.
 const EASE_UI = [0.23, 1, 0.32, 1] as const;
 
-// Which to-do each tool call belongs to.
+// Which to-do each tool call belongs to, when the step does not say (demo mode).
 const PARENT: Record<string, string> = {
   "tool-read": "todo-scan",
   "tool-map": "todo-map",
@@ -95,6 +96,8 @@ function Status() {
   const streaming = useDash((s) => s.messages.some((m) => m.shown < m.text.length));
   const waiting = useDash((s) => s.approval?.state === "pending");
   const t = useDash((s) => Math.floor(s.t / 1000));
+  // Live mode: the run has begun but the agent has not written its plan yet.
+  const starting = useDash((s) => LIVE && s.device === "scanning");
   const [open, setOpen] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
 
@@ -122,8 +125,10 @@ function Status() {
   if (!todos.length)
     return (
       <div className="flex h-12 shrink-0 items-center gap-2.5 px-4">
-        <DotGrid mode="idle" />
-        <span className="text-[13px] text-muted">Starts when the device connects</span>
+        <DotGrid mode={starting ? "working" : "idle"} />
+        <span className="text-[13px] text-muted">
+          {starting ? "Starting" : LIVE ? "Starts when you run a scan" : "Starts when the device connects"}
+        </span>
       </div>
     );
 
@@ -164,7 +169,7 @@ function Status() {
           >
             <ul>
               {todos.map((todo) => {
-                const kids = tools.filter((x) => PARENT[x.id] === todo.id);
+                const kids = tools.filter((x) => (x.parent ?? PARENT[x.id]) === todo.id);
                 const isActive = todo.state === "running";
                 return (
                   <li key={todo.id} data-active={isActive || undefined}>
@@ -231,8 +236,8 @@ function Approval() {
           transition={{ duration: 0.38, ease: EASE_UI }}
           className="mx-3 mb-2 rounded-[14px] border border-[rgba(255,255,255,0.08)] bg-[rgba(8,10,13,0.7)] p-3.5"
         >
-          <p className="text-[14px] font-medium text-text">Send pre-alert to the trauma center?</p>
-          <p className="mt-1 text-[13px] leading-[1.5] text-muted">Includes the map, best fit (epidural, L temporal, 22 mL) and the scan log.</p>
+          <p className="text-[14px] font-medium text-text">{approval.title ?? approval.action}</p>
+          {approval.detail && <p className="mt-1 text-[13px] leading-[1.5] text-muted">{approval.detail}</p>}
           <div className="mt-3 flex justify-end gap-2">
             <button
               type="button"
@@ -292,6 +297,7 @@ const FADE = "linear-gradient(to bottom, transparent 0, black 24px)";
 
 export function AgentPanel() {
   const messages = useDash((s) => s.messages);
+  const asking = useDash((s) => s.approval?.state === "pending");
   const scroller = useRef<HTMLDivElement>(null);
   const [clipped, setClipped] = useState(false);
 
@@ -300,7 +306,8 @@ export function AgentPanel() {
     if (!el) return;
     el.scrollTop = el.scrollHeight;
     setClipped(el.scrollTop > 4);
-  }, [messages]);
+    // Also when the approval card opens: it takes room from the bottom of the list.
+  }, [messages, asking]);
 
   return (
     <motion.section

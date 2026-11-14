@@ -1,4 +1,4 @@
-import { TIMELINE } from "./demo";
+import { demo } from "./demo";
 import type { DashState, RegionName } from "./types";
 
 // The agent run as a graph: the main pipeline left to right, and the triage
@@ -51,12 +51,17 @@ function span(t: number, start: number, end: number | null): Pick<TraceNode, "st
 
 export function deriveTrace(s: DashState): Trace {
   const t = s.t;
-  const T = TIMELINE;
+  const T = demo.timeline;
   const spotsDone = s.spots.filter((p) => p.state === "done").length;
   const simsDone = s.sims.filter((x) => x.status === "done").length;
   const best = s.sims.filter((x) => x.status === "done").sort((a, b) => b.score - a.score)[0];
   const scan = s.scan;
   const approval = s.approval;
+  // Every spot visited (a weak-contact spot counts as read).
+  const scanned = s.spots.every((p) => p.state === "done" || p.state === "rescan");
+  // Live mode: no result is stated until the medic approves it.
+  const stated = scan !== null && scan.status !== "pending" && scan.status !== "rejected";
+  const alertSent = T.alertSent ?? approval?.state === "approved";
   const agentMsgs = s.messages.filter((m) => m.role === "agent" && m.shown >= m.text.length).map((m) => m.text);
 
   const node = (n: Partial<TraceNode> & Pick<TraceNode, "id" | "kind" | "title" | "subtitle">): TraceNode => ({
@@ -92,7 +97,7 @@ export function deriveTrace(s: DashState): Trace {
     kind: "step",
     title: "Read scan spots",
     subtitle: "8 spots around the head",
-    ...span(t, T.scanAt, spotsDone === 8 ? T.scanEnd : null),
+    ...span(t, T.scanAt, scanned ? T.scanEnd : null),
     items: spotsDone || null,
     output: s.spots.filter((p) => p.peak !== null).map((p) => [p.name, `peak ${p.peak!.toFixed(2)}`]),
   });
@@ -102,17 +107,19 @@ export function deriveTrace(s: DashState): Trace {
     kind: "step",
     title: "Build likelihood map",
     subtitle: "64 × 64 grid",
-    ...span(t, T.firstMapAt, spotsDone === 8 ? T.scanEnd : null),
+    ...span(t, T.firstMapAt, scanned ? T.scanEnd : null),
     items: scan ? 1 : null,
     input: [["spots", `${spotsDone} of 8`]],
-    output: scan
-      ? [
+    output: !scan
+      ? []
+      : !stated
+        ? [["status", scan.status]]
+        : [
           ["status", scan.status],
           ["region", scan.region],
           ["volume", scan.volume_ml ? `${scan.volume_ml} mL` : "none"],
           ["confidence", `${Math.round(scan.confidence * 100)}%`],
-        ]
-      : [],
+        ],
   });
 
   const agentRunning = s.steps.some((x) => x.state === "running");
@@ -125,10 +132,10 @@ export function deriveTrace(s: DashState): Trace {
     startedAt: s.steps.length ? T.connectedAt + 1000 : null,
     endedAt: !agentRunning && s.steps.length && approval?.state !== "pending" ? t : null,
     items: simsDone || null,
-    input: scan ? [["map", `${scan.status}, ${scan.region}`]] : [],
+    input: scan ? [["map", stated ? `${scan.status}, ${scan.region}` : scan.status]] : [],
     // What the agent produced, not its step statuses (those are in the log).
     output: [
-      ...(scan ? ([["verdict", scan.status === "bleed" ? "Bleed likely" : scan.status === "uncertain" ? "Uncertain, re-scan" : "No bleed seen"]] as [string, string][]) : []),
+      ...(scan && stated ? ([["verdict", scan.status === "bleed" ? "Bleed likely" : scan.status === "uncertain" ? "Uncertain, re-scan" : "No bleed seen"]] as [string, string][]) : []),
       ...(t >= T.simEnd + 300 && best ? ([["best fit", `${best.type}, ${best.region}, ${best.volume_ml} mL (${best.score.toFixed(2)})`]] as [string, string][]) : []),
       ...(approval ? ([["recommendation", approval.action]] as [string, string][]) : []),
     ],
@@ -198,9 +205,9 @@ export function deriveTrace(s: DashState): Trace {
     kind: "action",
     title: "Send pre-alert",
     subtitle: "Receiving trauma center",
-    status: approval?.state === "approved" ? "success" : "idle",
-    items: approval?.state === "approved" ? 1 : null,
-    output: approval?.state === "approved" ? [["sent", "map, best fit, scan log"]] : [],
+    status: alertSent ? "success" : "idle",
+    items: alertSent ? 1 : null,
+    output: alertSent ? [["sent", "map, best fit, scan log"]] : [],
   });
 
   const nodes = [device, spots, map, agent, rank, approvalNode, alert, model, memory, simTool, fitTool, ...regions];

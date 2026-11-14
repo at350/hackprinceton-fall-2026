@@ -3,7 +3,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import type { ReactNode } from "react";
 import type { ScanStatus, SignalQuality } from "@/lib/types";
-import { IconAlert, IconBars, IconQuestion, IconShieldCheck } from "./icons";
+import { IconAlert, IconBars, IconClock, IconQuestion, IconShieldCheck, IconX } from "./icons";
 
 export const EASE_ENTER = [0.08, 0.78, 0.56, 1] as const;
 export const EASE_EXPO = [0.19, 1, 0.22, 1] as const;
@@ -15,6 +15,8 @@ export const SCAN_STATUS: Record<ScanStatus, { label: string; color: string; Ico
   bleed: { label: "Bleed likely", color: "var(--bleed-text)", Icon: IconAlert },
   uncertain: { label: "Uncertain, re-scan", color: "var(--uncertain)", Icon: IconQuestion },
   clear: { label: "No bleed seen", color: "var(--safe-text)", Icon: IconShieldCheck },
+  pending: { label: "Analyzing scan", color: "var(--muted)", Icon: IconClock },
+  rejected: { label: "No result recorded", color: "var(--muted)", Icon: IconX },
 };
 
 export const QUALITY: Record<SignalQuality, { label: string; color: string; level: 1 | 2 | 3 }> = {

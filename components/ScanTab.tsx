@@ -37,7 +37,11 @@ function Verdict({ scan }: { scan: ScanUpdate | null }) {
 function Summary({ scan, done }: { scan: ScanUpdate | null; done: number }) {
   const parts: string[] = !scan
     ? ["Place the device on spot 1 to begin"]
-    : scan.status === "clear"
+    : scan.status === "pending"
+      ? ["Result appears once you approve it"]
+      : scan.status === "rejected"
+        ? ["You rejected the proposed result"]
+      : scan.status === "clear"
       ? [`Nothing in ${done} of 8 spots`, `${Math.round(scan.confidence * 100)}% confidence`]
       : [
           scan.region,
@@ -59,7 +63,7 @@ function Summary({ scan, done }: { scan: ScanUpdate | null; done: number }) {
           {parts.map((p, i) => (
             <span key={i} className="flex items-center gap-2.5">
               {i > 0 && <span className="size-1 rounded-full bg-muted opacity-50" />}
-              <span className={scan ? "text-text" : "text-muted"}>{p}</span>
+              <span className={scan && scan.status !== "pending" && scan.status !== "rejected" ? "text-text" : "text-muted"}>{p}</span>
             </span>
           ))}
         </motion.p>

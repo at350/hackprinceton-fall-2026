@@ -1,8 +1,10 @@
 "use client";
 
 import { motion } from "motion/react";
+import { useState } from "react";
 import { DEMO_LENGTH_MS } from "@/lib/config";
 import { demo } from "@/lib/demo";
+import { SCAN_CASES, type ScanCase, live } from "@/lib/live";
 import type { DeviceStatus, ViewId } from "@/lib/types";
 import { formatClock, useDash } from "@/lib/useDash";
 import { IconArrowRight, IconClock, IconDashboard, IconLink, IconPause, IconPlay, IconPlug, IconWorkflow, Spinner } from "./icons";
@@ -44,17 +46,15 @@ function Elapsed() {
 }
 
 /** Delta / GenRevive: filled pill CTA with a contrasting circular end, arrow swaps on hover. */
-function PlayDemo() {
-  const sec = useDash((s) => Math.floor(s.t / 1000));
-  const progress = (sec * 1000) / DEMO_LENGTH_MS;
+function Cta({ label, onClick, progress }: { label: string; onClick: () => void; progress?: number }) {
   return (
     <button
       type="button"
-      onClick={() => demo.restart()}
+      onClick={onClick}
       className="group relative flex h-11 items-center gap-3 overflow-hidden rounded-full bg-text pl-5 pr-1 text-[14px] font-medium text-bg transition-transform duration-150 active:scale-[0.97]"
     >
       <span className="flex flex-col items-start leading-none">
-        <span>Play demo</span>
+        <span>{label}</span>
       </span>
       <span className="relative grid size-9 place-items-center overflow-hidden rounded-full bg-bg text-text">
         <span className="absolute transition-transform duration-[400ms] [transition-timing-function:var(--ease-swap)] group-hover:translate-x-[calc(100%+12px)]">
@@ -64,8 +64,46 @@ function PlayDemo() {
           <IconArrowRight size={14} />
         </span>
       </span>
-      <span className="absolute bottom-0 left-0 h-[2px] bg-primary" style={{ width: `${progress * 100}%`, transition: "width 1s linear" }} />
+      {progress !== undefined && (
+        <span className="absolute bottom-0 left-0 h-[2px] bg-primary" style={{ width: `${progress * 100}%`, transition: "width 1s linear" }} />
+      )}
     </button>
+  );
+}
+
+function PlayDemo() {
+  const sec = useDash((s) => Math.floor(s.t / 1000));
+  return <Cta label="Play demo" onClick={() => demo.restart()} progress={(sec * 1000) / DEMO_LENGTH_MS} />;
+}
+
+/** Live mode: which mock scan the device holds. Same segmented look as the view switch. */
+function ScanPicker({ value, onChange }: { value: ScanCase; onChange: (id: ScanCase) => void }) {
+  const segment = "h-8 items-center whitespace-nowrap rounded-[7px] px-3 text-[13px] font-medium transition-colors duration-150";
+  const at = SCAN_CASES.findIndex((c) => c.id === value);
+  return (
+    <div role="radiogroup" aria-label="Mock scan" className="flex shrink-0 gap-0.5 rounded-[10px] bg-[rgba(0,0,0,0.3)] p-1">
+      {SCAN_CASES.map(({ id, label }) => (
+        <button
+          key={id}
+          type="button"
+          role="radio"
+          aria-checked={value === id}
+          onClick={() => onChange(id)}
+          className={`hidden @min-[1100px]:flex ${segment} ${value === id ? "bg-[rgba(255,255,255,0.12)] text-text" : "text-muted hover:text-text"}`}
+        >
+          {label}
+        </button>
+      ))}
+      {/* Narrow bar: one segment that steps through the cases. */}
+      <button
+        type="button"
+        title="Mock scan"
+        onClick={() => onChange(SCAN_CASES[(at + 1) % SCAN_CASES.length].id)}
+        className={`flex @min-[1100px]:hidden ${segment} bg-[rgba(255,255,255,0.12)] text-text`}
+      >
+        {SCAN_CASES[at].label}
+      </button>
+    </div>
   );
 }
 
@@ -103,6 +141,7 @@ function ViewSwitch() {
 export function Header() {
   const playing = useDash((s) => s.playing);
   const sec = useDash((s) => Math.floor(s.t / 1000));
+  const [scanCase, setScanCase] = useState<ScanCase>("temporal_bleed");
   return (
     <motion.header
       initial={{ opacity: 0, y: -8 }}
@@ -123,21 +162,27 @@ export function Header() {
         <ViewSwitch />
         <div className="flex min-w-0 flex-1 basis-0 items-center justify-end gap-5">
           <Elapsed />
-          <span className="hidden h-5 w-px bg-line @min-[900px]:block" />
-          <span className="hidden whitespace-nowrap text-[13px] text-muted @min-[900px]:inline">
-            {formatClock(sec * 1000)} / {formatClock(DEMO_LENGTH_MS)}
-          </span>
-          <button
-            type="button"
-            onClick={() => demo.togglePause()}
-            aria-label={playing ? "Pause demo" : "Resume demo"}
-            className="grid size-10 place-items-center rounded-full text-muted transition-colors duration-150 hover:bg-raised hover:text-text"
-          >
-            {playing ? <IconPause size={14} /> : <IconPlay size={14} />}
-          </button>
+          {live ? (
+            <ScanPicker value={scanCase} onChange={setScanCase} />
+          ) : (
+            <>
+              <span className="hidden h-5 w-px bg-line @min-[900px]:block" />
+              <span className="hidden whitespace-nowrap text-[13px] text-muted @min-[900px]:inline">
+                {formatClock(sec * 1000)} / {formatClock(DEMO_LENGTH_MS)}
+              </span>
+              <button
+                type="button"
+                onClick={() => demo.togglePause()}
+                aria-label={playing ? "Pause demo" : "Resume demo"}
+                className="grid size-10 place-items-center rounded-full text-muted transition-colors duration-150 hover:bg-raised hover:text-text"
+              >
+                {playing ? <IconPause size={14} /> : <IconPlay size={14} />}
+              </button>
+            </>
+          )}
         </div>
       </div>
-      <PlayDemo />
+      {live ? <Cta label="Run scan" onClick={() => live?.restart(scanCase)} /> : <PlayDemo />}
     </motion.header>
   );
 }

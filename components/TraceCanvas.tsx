@@ -196,7 +196,7 @@ function NodeView({ node, selected, onSelect }: { node: TraceNode; selected: boo
             <span className="flex min-w-0 flex-col items-start leading-tight">
               <span className="truncate text-[15px] font-medium text-text">{node.title}</span>
               {box.shape === "pill" && (
-                <span className="text-[12px] text-muted">{node.items ? `${node.items} of 6 run` : node.subtitle}</span>
+                <span className="text-[12px] text-muted">{node.items ? `${node.items} of ${parseInt(node.subtitle)} run` : node.subtitle}</span>
               )}
             </span>
           )}
