@@ -149,61 +149,6 @@ body {
   line-height: 1;
 }
 
-/* Koniku live dot: 1px ring scales out and fades. */
-@keyframes pulse-ring {
-  from {
-    transform: scale(1);
-    opacity: 0.6;
-  }
-  to {
-    transform: scale(2.4);
-    opacity: 0;
-  }
-}
-.pulse-ring {
-  animation: pulse-ring 2s cubic-bezier(0.075, 0.82, 0.165, 1) infinite;
-}
-
-/* Koniku wave-bar loader. */
-@keyframes wave {
-  0%,
-  100% {
-    transform: scaleY(0.4);
-  }
-  50% {
-    transform: scaleY(1);
-  }
-}
-.wave > span {
-  display: block;
-  width: 2px;
-  border-radius: 1px;
-  background: currentColor;
-  animation: wave 1.2s ease-in-out infinite;
-}
-.wave > span:nth-child(2) {
-  animation-delay: 0.1s;
-}
-.wave > span:nth-child(3) {
-  animation-delay: 0.2s;
-}
-.wave > span:nth-child(4) {
-  animation-delay: 0.3s;
-}
-
-/* Koniku drifting dashed "signal" line. */
-@keyframes dash-drift {
-  to {
-    background-position: 40px 0;
-  }
-}
-.dash-line {
-  background-image: linear-gradient(to right, var(--line-strong) 50%, transparent 50%);
-  background-size: 8px 1px;
-  background-repeat: repeat-x;
-  animation: dash-drift 4s linear infinite;
-}
-
 /* Beautiful UI loader: 3x3 grid of 4px squares lighting in sequence. */
 @keyframes dot-grid {
   0%,

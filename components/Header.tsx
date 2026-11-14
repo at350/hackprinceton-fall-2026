@@ -5,7 +5,7 @@ import { DEMO_LENGTH_MS, PATIENT_ID } from "@/lib/config";
 import { demo } from "@/lib/demo";
 import type { DeviceStatus } from "@/lib/types";
 import { formatClock, useDash } from "@/lib/useDash";
-import { IconArrowRight, IconClock, IconPause, IconPlay, IconPlug, Spinner } from "./icons";
+import { IconArrowRight, IconClock, IconLink, IconPause, IconPlay, IconPlug, Spinner } from "./icons";
 import { Logo } from "./Logo";
 import { EASE_ENTER, Swap } from "./ui";
 
@@ -24,12 +24,7 @@ function DeviceStatusChip() {
       <span className="grid size-4 place-items-center">
         {device === "disconnected" && <IconPlug size={14} />}
         {(device === "connecting" || device === "scanning") && <Spinner size={13} />}
-        {device === "connected" && (
-          <span className="relative block size-2">
-            <span className="pulse-ring absolute inset-0 rounded-full border border-current" />
-            <span className="absolute inset-0 rounded-full bg-current" />
-          </span>
-        )}
+        {device === "connected" && <IconLink size={15} />}
       </span>
       <Swap value={d.label} />
     </span>

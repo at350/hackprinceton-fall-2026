@@ -108,7 +108,6 @@ function Marker({ spot }: { spot: ScanSpot }) {
     case "current":
       return (
         <g>
-          <circle cx={p.x} cy={p.y} r={r} fill="none" stroke="var(--primary)" strokeWidth={0.006} className="pulse-ring" style={{ transformOrigin: `${p.x}px ${p.y}px`, transformBox: "view-box" }} />
           <circle cx={p.x} cy={p.y} r={r} fill="var(--primary)" />
           <text x={p.x} y={p.y + 0.021} textAnchor="middle" fontSize={0.06} fontWeight={600} fill="#06121a">
             {spot.index + 1}
@@ -136,22 +135,19 @@ function Marker({ spot }: { spot: ScanSpot }) {
 
 export function BrainView({ scan, spots, current, run }: { scan: ScanUpdate | null; spots: ScanSpot[]; current: number | null; run: number }) {
   const vb = `${-VIEW} ${-VIEW} ${VIEW * 2} ${VIEW * 2}`;
-  const sense = current === null ? null : pointAt(current * 45, 0.8);
+  // The stretch of cortex under the coil, as a crisp arc along the brain's edge.
+  const senseArc =
+    current === null
+      ? null
+      : Array.from({ length: 13 }, (_, i) => {
+          const p = pointAt(current * 45 - 24 + i * 4, 1.04);
+          return `${i ? "L" : "M"} ${p.x.toFixed(4)} ${p.y.toFixed(4)}`;
+        }).join(" ");
   return (
     <div className="relative" style={{ width: "min(100cqw, 100cqh)", height: "min(100cqw, 100cqh)" }}>
       <BrainCanvas key={run} scan={scan} />
       <svg viewBox={vb} className="absolute inset-0 size-full" role="img" aria-label="Brain from above with bleed-likelihood heatmap and 8 scan spots">
-        <defs>
-          <radialGradient id="sense">
-            <stop offset="0" stopColor="#22c3e6" stopOpacity="0.35" />
-            <stop offset="1" stopColor="#22c3e6" stopOpacity="0" />
-          </radialGradient>
-        </defs>
-        {sense && (
-          <circle cx={sense.x} cy={sense.y} r={0.34} fill="url(#sense)">
-            <animate attributeName="r" values="0.28;0.36;0.28" dur="2.4s" repeatCount="indefinite" />
-          </circle>
-        )}
+        {senseArc && <path d={senseArc} fill="none" stroke="var(--primary)" strokeWidth={0.012} strokeLinecap="round" />}
         <text x={-0.98} y={0.02} fontSize={0.06} fontWeight={500} fill="var(--muted)" textAnchor="middle">L</text>
         <text x={0.98} y={0.02} fontSize={0.06} fontWeight={500} fill="var(--muted)" textAnchor="middle">R</text>
         {spots.map((s) => (

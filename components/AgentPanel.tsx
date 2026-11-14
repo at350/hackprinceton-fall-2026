@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { demo } from "@/lib/demo";
 import type { AgentStep, ChatMessage } from "@/lib/types";
 import { useDash } from "@/lib/useDash";
-import { IconArrowUp, IconCheck, IconTool, IconX, Spinner } from "./icons";
+import { IconArrowUp, IconCheck, IconHand, IconTool, IconX, Spinner } from "./icons";
 
 // Beautiful UI motion.
 const EASE_UI = [0.23, 1, 0.32, 1] as const;
@@ -47,7 +47,7 @@ function StatusLine() {
     <div className="flex h-11 shrink-0 items-center gap-2.5 px-4">
       {waiting ? (
         <>
-          <span className="size-2 rounded-full bg-primary" />
+          <IconHand size={15} className="text-primary" />
           <span className="text-[13px] font-medium text-text">Waiting for your approval</span>
         </>
       ) : busy ? (
@@ -58,7 +58,7 @@ function StatusLine() {
         </>
       ) : (
         <>
-          <span className="size-2 rounded-full bg-muted opacity-60" />
+          <IconCheck size={14} className="text-muted" />
           <span className="text-[13px] text-muted">{steps.length ? "Idle" : "Starts when the device connects"}</span>
         </>
       )}

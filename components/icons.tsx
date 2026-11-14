@@ -108,6 +108,14 @@ export const IconPlug = (p: P) => (
   </Svg>
 );
 
+/** Connected: two linked chain halves. */
+export const IconLink = (p: P) => (
+  <Svg {...p}>
+    <path d="M6.8 9.2a2.6 2.6 0 0 0 3.7 0l2.2-2.2a2.6 2.6 0 0 0-3.7-3.7l-.9.9" />
+    <path d="M9.2 6.8a2.6 2.6 0 0 0-3.7 0L3.3 9a2.6 2.6 0 0 0 3.7 3.7l.9-.9" />
+  </Svg>
+);
+
 export const IconTool = (p: P) => (
   <Svg {...p}>
     <path d="m3 5 3 3-3 3M8 11.5h5" />
@@ -175,16 +183,5 @@ export function Ring({ progress, size = 13 }: { progress: number; size?: number 
         strokeDashoffset={1 - Math.max(0.04, progress)}
       />
     </svg>
-  );
-}
-
-export function Wave({ className = "", height = 12 }: { className?: string; height?: number }) {
-  return (
-    <span className={`wave inline-flex items-center gap-[2px] ${className}`} style={{ height }} aria-hidden>
-      <span style={{ height }} />
-      <span style={{ height }} />
-      <span style={{ height }} />
-      <span style={{ height }} />
-    </span>
   );
 }
