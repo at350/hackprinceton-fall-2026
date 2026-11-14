@@ -1,0 +1,6 @@
+{
+  "dependencies": ["."],
+  "graphs": { "lucid": "./lucid/agent.py:agent" },
+  "store": { "path": "./lucid/store.py:create_store" },
+  "env": "../.env"
+}
