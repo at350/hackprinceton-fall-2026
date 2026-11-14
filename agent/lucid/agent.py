@@ -19,18 +19,26 @@ from lucid.tools import (
 
 
 
-class CloseTodos(AgentMiddleware):
-    """Tick off the plan when the lead finishes a turn after the medic has decided.
+class CloseOut(AgentMiddleware):
+    """Tidy the dashboard state when the lead finishes a turn after the medic has decided.
 
-    Saves a model call whose only job would be to mark the last step done.
+    Ticks off the plan (saves a model call whose only job would be that) and, if
+    the medic rejected the proposed result, marks the scan as having no result.
     """
 
     def after_agent(self, state, runtime):
+        verdicts = [m for m in state["messages"] if getattr(m, "type", "") == "tool" and m.name == "submit_result"]
+        if not verdicts:
+            return None
+        update = {}
         todos = state.get("todos") or []
-        decided = any(getattr(m, "type", "") == "tool" and m.name == "submit_result" for m in state["messages"])
-        if decided and any(t["status"] != "completed" for t in todos):
-            return {"todos": [{**t, "status": "completed"} for t in todos]}
-        return None
+        if any(t["status"] != "completed" for t in todos):
+            update["todos"] = [{**t, "status": "completed"} for t in todos]
+        scan = state.get("scan")
+        if scan and scan["status"] == "pending" and verdicts[-1].status == "error":  # the gate reports a rejection as an error
+            update["scan"] = {**scan, "status": "rejected"}
+            update["preview"] = None
+        return update or None
 
 
 region_agents = [
@@ -52,7 +60,7 @@ agent = create_deep_agent(
     subagents=region_agents,
     skills=["/skills/"],
     backend=backend,
-    middleware=[TodoListMiddleware(), CloseTodos()],
+    middleware=[TodoListMiddleware(), CloseOut()],
     state_schema=LucidState,
     # The medic approves before a result is stated and before any handoff.
     interrupt_on={

@@ -2,7 +2,7 @@
 
 Dashboard for **Lucid**, a handheld brain-bleed screener (HackPrinceton Fall 2026, Healthcare track). A medic moves the device over 8 spots around the head; the laptop shows the bleed-likelihood map filling in, live device signals, region simulations ranked by fit, and an AI agent that explains the result and asks the medic to approve next steps. A second view shows the same agent run as an n8n-style workflow trace.
 
-This repo is the **front end only**. Every data source is mocked; there is no backend, hardware, or real agent yet.
+The dashboard runs in two modes. **Demo** (default) plays a scripted story with mocked data. **Live** (`?live=1`) is driven by a real LangChain deep agent in [`/agent`](agent/README.md): real plan steps, about 100 simulations filling the grid, and Approve / Reject pauses that resume the agent. There is no hardware yet; the agent reads mock scans.
 
 > The product name lives in one place: `PRODUCT_NAME` in `lib/config.ts`.
 
@@ -18,6 +18,22 @@ Open http://localhost:3000. Target screen is a 1440×900 laptop (one screen, no 
 The demo starts on load and loops. **Play demo** (top right) restarts it from the beginning; the pause button freezes the story.
 
 The switch in the middle of the header flips between **Dashboard** and **Agent trace** (modeled on n8n's Editor / Executions switch). The demo keeps running in both views, and the chosen view stays put when the demo restarts or loops.
+
+## Live mode: the real agent
+
+```bash
+cd agent
+uv venv --python 3.12 && uv pip install -r requirements.txt
+.venv/bin/langgraph dev --no-browser      # http://localhost:2024, assistant "lucid"
+```
+
+Needs `ANTHROPIC_API_KEY` (and `LANGSMITH_API_KEY` for traces) in `.env` at the repo root. Then open http://localhost:3000/?live=1 (or set `NEXT_PUBLIC_LUCID_MODE=live`).
+
+Pick a mock scan in the header (Temporal bleed, Clear, Uncertain) and press **Run scan**. About 30 s later the agent pauses with an approval card. A bleed pauses twice: once for the result, once before the pre-alert. Typing in the chat while a card is open rejects it with your text as the reason. Running a second scan on the same page re-scans the same patient against the saved baseline.
+
+The UI connects with the LangGraph SDK (`useStream` in `components/LiveBridge.tsx`); `lib/live.ts` maps agent state onto the same store the demo uses. Agent design, tools and skills: [`agent/README.md`](agent/README.md).
+
+Types changed for live mode (`lib/types.ts`): `ScanStatus` gained `"pending"` (no result stated before approval) and `"rejected"`; `AgentStep` gained optional `parent`; `ApprovalRequest` gained optional `title` and `detail`.
 
 ## The 2-minute demo story
 

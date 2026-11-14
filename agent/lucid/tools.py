@@ -237,29 +237,42 @@ async def fit_score(hypothesis_ids: list[str], runtime: ToolRuntime) -> Command:
 
 
 @tool
-def rank_fits(runtime: ToolRuntime) -> str:
-    """Rank every scored hypothesis against the no-bleed model and apply the decision rule. Call once all region agents are back."""
+async def rank_fits(runtime: ToolRuntime) -> Command:
+    """Rank every scored hypothesis against the no-bleed model and apply the decision rule. Call once all region agents are back.
+
+    If the rule's outcome is a bleed, the best fit's map goes on the dashboard for the medic to review.
+    """
     sims = runtime.state.get("sims", [])
     left = sum(s["status"] != "done" for s in sims)
     if not sims or left or runtime.state.get("null_fit") is None:
-        return f"Not ready: {left} hypotheses unscored, no-bleed {'scored' if runtime.state.get('null_fit') is not None else 'not scored'}."
+        return _reply(runtime, f"Not ready: {left} hypotheses unscored, no-bleed {'scored' if runtime.state.get('null_fit') is not None else 'not scored'}.")
     d = decide(sims, runtime.state["null_fit"])
     by_region: dict[str, dict] = {}
     for s in sorted(sims, key=lambda s: -s["score"]):
         by_region.setdefault(s["region"], s)
     table = "\n".join(f"{r}: {s['id']} {s['score']:.2f}" for r, s in by_region.items())
-    return f"{describe(d)}\nBest fit per region:\n{table}"
+    update = {"preview": await _preview(runtime, d["best"]["id"])} if d["status"] == "bleed" else {}
+    return _reply(runtime, f"{describe(d)}\nBest fit per region:\n{table}", **update)
+
+
+async def _preview(runtime: ToolRuntime, hypothesis_id: str) -> dict:
+    h = _BY_ID[hypothesis_id]
+    preview = {"hypothesis_id": hypothesis_id, "map": await asyncio.to_thread(physics.hypothesis_map, h["type"], h["region"], h["volume_ml"], 64)}
+    _emit(runtime, {"type": "preview", "preview": preview})
+    return preview
 
 
 @tool
 async def render_map(hypothesis_id: str, runtime: ToolRuntime) -> Command:
-    """Render one hypothesis as a small 2D heatmap for the dashboard, so the medic sees what they are asked to approve."""
+    """Render one hypothesis as a small 2D heatmap on the dashboard, e.g. when the medic asks to see an alternative fit."""
     h = _BY_ID.get(hypothesis_id)
     if h is None:
         return _reply(runtime, f"Unknown hypothesis '{hypothesis_id}'.")
-    preview = {"hypothesis_id": hypothesis_id, "map": await asyncio.to_thread(physics.hypothesis_map, h["type"], h["region"], h["volume_ml"], 64)}
-    _emit(runtime, {"type": "preview", "preview": preview})
-    return _reply(runtime, f"Map for {hypothesis_id} ({h['type']}, {h['region']}, {h['volume_ml']} mL) is on the dashboard.", preview=preview)
+    return _reply(
+        runtime,
+        f"Map for {hypothesis_id} ({h['type']}, {h['region']}, {h['volume_ml']} mL) is on the dashboard.",
+        preview=await _preview(runtime, hypothesis_id),
+    )
 
 
 # ---- Result and handoff (both pause for the medic) ------------------------

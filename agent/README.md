@@ -75,8 +75,8 @@ The rule is code (`lucid/decision.py`), not prompt. The lead may be more cautiou
 | `plan_hypotheses` | lead | The lead chooses where to look; the tool expands that into ~100 type x region x volume hypotheses and writes `/hypotheses.json`. Keeps the choice with the model and the bookkeeping out of its context |
 | `forward_sim` | region agents | The reading a hypothesis would produce on the head model. pyEIT on a coarse 2D head mesh, precomputed into a lookup table so it answers instantly |
 | `fit_score` | region agents, lead | 0-1 match between a simulated reading and the scan. Weak-contact spots count less |
-| `rank_fits` | lead | Applies the decision rule to all scores, so the arithmetic is never the model's |
-| `render_map` | lead | Puts the map of the proposed finding on the dashboard, so the medic sees what they are approving |
+| `rank_fits` | lead | Applies the decision rule to all scores, so the arithmetic is never the model's. For a bleed it also puts the best fit's map on the dashboard, so the medic sees what they are asked to approve |
+| `render_map` | lead | A small 2D heatmap of any one hypothesis on the dashboard, for when the medic asks to see an alternative |
 | `submit_result` | lead | Records the result. Gated by `interrupt_on`. Takes region, volume and confidence from the scores, not from the model |
 | `send_prealert` | lead | The handoff. Gated by `interrupt_on`, and only possible after a bleed result was approved. Simulated: there is no hospital link yet |
 
@@ -116,7 +116,7 @@ The UI connects with the LangGraph SDK (`useStream`) and reads thread state dire
 |---|---|
 | `todos` | `{content, status}[]` |
 | `sims` | `Simulation[]`: `id, type, region, volume_ml, status, score, map` (32x32), `agent, progress` |
-| `scan` | `ScanUpdate`: `status, region, volume_ml, confidence, map` (64x64). `status` is `"pending"` until the medic approves |
+| `scan` | `ScanUpdate`: `status, region, volume_ml, confidence, map` (64x64). `status` is `"pending"` until the medic approves, `"rejected"` if they turn the proposal down |
 | `spots` | `ScanSpot[]` |
 | `preview` | `{hypothesis_id, map}` while a result waits for approval |
 | `handoff` | `{to, message, sent_at, simulated}` after a pre-alert |
