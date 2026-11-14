@@ -2,7 +2,7 @@
 
 import { motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { deriveTrace, type TraceNode } from "@/lib/trace";
+import { deriveTrace, type TraceLog, type TraceNode } from "@/lib/trace";
 import { formatClock, useDash } from "@/lib/useDash";
 import { IconChevronDown, Spinner } from "./icons";
 import { TraceCanvas } from "./TraceCanvas";
@@ -16,36 +16,23 @@ const STATUS: Record<TraceNode["status"], { label: string; color: string }> = {
   error: { label: "Rejected", color: "var(--bleed-text)" },
 };
 
-/** n8n node-details style: item count, then a bordered table. */
-function DataTable({ rows, empty }: { rows: [string, string][]; empty: string }) {
+/** Inspector fields: label above value, no grid, so it can't be mistaken for a log. */
+function Fields({ rows, empty }: { rows: [string, string][]; empty: string }) {
   if (!rows.length) return <p className="text-[13px] text-muted">{empty}</p>;
   return (
-    <div className="flex flex-col gap-2">
-      <span className="text-[12.5px] text-muted">
-        {rows.length} field{rows.length === 1 ? "" : "s"}
-      </span>
-      <table className="w-full border-collapse text-[13px]">
-        <thead>
-          <tr>
-            <th className="border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-3 py-2 text-left font-medium text-muted">field</th>
-            <th className="border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-3 py-2 text-left font-medium text-muted">value</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(([k, v], i) => (
-            <tr key={i}>
-              <td className="border border-[rgba(255,255,255,0.08)] px-3 py-2 align-top text-muted">{k}</td>
-              <td className="border border-[rgba(255,255,255,0.08)] px-3 py-2 align-top text-text">{v}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <dl className="flex flex-col gap-4">
+      {rows.map(([k, v], i) => (
+        <div key={i} className="flex flex-col gap-1">
+          <dt className="text-[12px] text-muted capitalize">{k}</dt>
+          <dd className="text-[14px] leading-snug text-text">{v}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
 function Details({ node }: { node: TraceNode }) {
-  const tabs = node.reasoning.length ? (["Output", "Input", "Reasoning"] as const) : (["Output", "Input"] as const);
+  const tabs = node.kind === "agent" ? (["Reasoning", "Output", "Input"] as const) : (["Output", "Input"] as const);
   const [tab, setTab] = useState<(typeof tabs)[number]>(tabs[0]);
   const active = tabs.includes(tab as never) ? tab : tabs[0];
   const s = STATUS[node.status];
@@ -82,9 +69,10 @@ function Details({ node }: { node: TraceNode }) {
         ))}
       </div>
       <div className="scroll-thin min-h-0 flex-1 overflow-y-auto p-4">
-        {active === "Output" && <DataTable rows={node.output} empty="No output yet." />}
-        {active === "Input" && <DataTable rows={node.input} empty="No input." />}
-        {active === "Reasoning" && (
+        {active === "Output" && <Fields rows={node.output} empty="No output yet." />}
+        {active === "Input" && <Fields rows={node.input} empty="No input." />}
+        {active === "Reasoning" && !node.reasoning.length && <p className="text-[13px] text-muted">No reasoning yet.</p>}
+        {active === "Reasoning" && node.reasoning.length > 0 && (
           <ol className="flex flex-col gap-4">
             {node.reasoning.map((r, i) => (
               <li key={i} className="flex gap-3">
@@ -99,8 +87,8 @@ function Details({ node }: { node: TraceNode }) {
   );
 }
 
-function Logs({ logs }: { logs: { at: number; node: string; text: string }[] }) {
-  const [open, setOpen] = useState(true);
+function Logs({ logs, onSelect }: { logs: TraceLog[]; onSelect: (id: string) => void }) {
+  const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
@@ -110,6 +98,11 @@ function Logs({ logs }: { logs: { at: number; node: string; text: string }[] }) 
       <button type="button" onClick={() => setOpen(!open)} className="flex h-10 w-full items-center gap-2 px-4 text-[13px]">
         <span className="font-medium text-text">Logs</span>
         <span className="text-muted">{logs.length}</span>
+        {!open && logs.length > 0 && (
+          <span className="ml-3 truncate text-muted">
+            {formatClock(logs[logs.length - 1].at)} · {logs[logs.length - 1].node} {logs[logs.length - 1].text}
+          </span>
+        )}
         <IconChevronDown size={14} className="ml-auto text-muted transition-transform duration-300" style={{ transform: open ? "none" : "rotate(180deg)" }} />
       </button>
       <div
@@ -119,11 +112,16 @@ function Logs({ logs }: { logs: { at: number; node: string; text: string }[] }) 
         <div className="min-h-0 overflow-hidden">
           <div ref={ref} className="scroll-thin h-[132px] overflow-y-auto px-4 pb-3">
             {logs.map((l, i) => (
-              <div key={i} className="flex h-7 items-center gap-4 text-[13px]">
+              <button
+                key={i}
+                type="button"
+                onClick={() => onSelect(l.nodeId)}
+                className="flex h-7 w-full items-center gap-4 rounded-[6px] px-1 text-left text-[13px] transition-colors duration-100 hover:bg-[rgba(255,255,255,0.04)]"
+              >
                 <span className="w-12 shrink-0 font-mono text-[12px] text-muted">{formatClock(l.at)}</span>
                 <span className="w-40 shrink-0 truncate text-text">{l.node}</span>
                 <span className="truncate text-muted">{l.text}</span>
-              </div>
+              </button>
             ))}
           </div>
         </div>
@@ -150,7 +148,7 @@ export function TracePage() {
         <div className="relative min-h-0 flex-1">
           <TraceCanvas trace={trace} selected={node.id} onSelect={setSelected} />
         </div>
-        <Logs logs={trace.logs} />
+        <Logs logs={trace.logs} onSelect={setSelected} />
       </section>
       <Details key={node.id} node={node} />
     </motion.div>

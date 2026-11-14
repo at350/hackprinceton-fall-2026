@@ -13,6 +13,12 @@ export default function Dashboard() {
   const view = useDash((s) => s.view);
 
   useEffect(() => {
+    // Dev aid for screenshots: ?view=trace&t=90000 opens a view at a story time.
+    if (process.env.NODE_ENV !== "production") {
+      const q = new URLSearchParams(location.search);
+      if (q.get("t")) demo.seek(Number(q.get("t")));
+      if (q.get("view") === "trace") demo.setView("trace");
+    }
     demo.start();
     return () => demo.stop();
   }, []);

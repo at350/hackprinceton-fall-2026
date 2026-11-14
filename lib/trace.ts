@@ -29,6 +29,7 @@ export interface TraceEdge {
 
 export interface TraceLog {
   at: number; // demo ms
+  nodeId: string;
   node: string;
   text: string;
 }
@@ -125,7 +126,12 @@ export function deriveTrace(s: DashState): Trace {
     endedAt: !agentRunning && s.steps.length && approval?.state !== "pending" ? t : null,
     items: simsDone || null,
     input: scan ? [["map", `${scan.status}, ${scan.region}`]] : [],
-    output: s.steps.filter((x) => x.kind === "todo").map((x) => [x.label, x.state]),
+    // What the agent produced, not its step statuses (those are in the log).
+    output: [
+      ...(scan ? ([["verdict", scan.status === "bleed" ? "Bleed likely" : scan.status === "uncertain" ? "Uncertain, re-scan" : "No bleed seen"]] as [string, string][]) : []),
+      ...(t >= T.simEnd + 300 && best ? ([["best fit", `${best.type}, ${best.region}, ${best.volume_ml} mL (${best.score.toFixed(2)})`]] as [string, string][]) : []),
+      ...(approval ? ([["recommendation", approval.action]] as [string, string][]) : []),
+    ],
     reasoning: agentMsgs,
   });
 
@@ -211,10 +217,10 @@ export function deriveTrace(s: DashState): Trace {
   // Log: one line per node start and finish, in time order.
   const logs: TraceLog[] = [];
   for (const n of nodes) {
-    if (n.startedAt !== null && n.kind !== "model" && n.kind !== "memory") logs.push({ at: n.startedAt, node: n.title, text: "started" });
-    if (n.endedAt !== null && n.id !== "agent") logs.push({ at: n.endedAt, node: n.title, text: n.items ? `finished · ${n.items} item${n.items === 1 ? "" : "s"}` : "finished" });
+    if (n.startedAt !== null && n.kind !== "model" && n.kind !== "memory") logs.push({ at: n.startedAt, nodeId: n.id, node: n.title, text: "started" });
+    if (n.endedAt !== null && n.id !== "agent") logs.push({ at: n.endedAt, nodeId: n.id, node: n.title, text: n.items ? `finished · ${n.items} item${n.items === 1 ? "" : "s"}` : "finished" });
   }
-  if (approval && approval.state !== "pending") logs.push({ at: T.approvalAt, node: "Medic approval", text: approval.state });
+  if (approval && approval.state !== "pending") logs.push({ at: T.approvalAt, nodeId: "approval", node: "Medic approval", text: approval.state });
   logs.sort((a, b) => a.at - b.at);
 
   return { nodes, edges, logs };
