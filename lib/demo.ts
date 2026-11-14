@@ -36,6 +36,17 @@ const CHARS_PER_MS = 0.06;
 const SLOTS = [0, 1, 2, 3, 4, 5, 5, 6, 7];
 const SCAN_END = SCAN_AT + (SLOTS.length - 1) * SLOT_MS + DWELL_MS;
 
+/** Story milestones, for views that show timing (the agent trace). */
+export const TIMELINE = {
+  connectedAt: CONNECTED_AT,
+  scanAt: SCAN_AT,
+  firstMapAt: SCAN_AT + DWELL_MS,
+  scanEnd: SCAN_END,
+  simAt: SIM_AT,
+  simEnd: SIM_AT + SIM_SPAN,
+  approvalAt: APPROVAL_AT,
+};
+
 // Result card after each slot finishes.
 const SLOT_RESULT: { status: ScanStatus; region: string; volume_ml: number; confidence: number }[] = [
   { status: "clear", region: "None", volume_ml: 0, confidence: 0.41 },
