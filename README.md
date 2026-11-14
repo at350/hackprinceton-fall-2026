@@ -4,6 +4,8 @@ Dashboard for **Lucid**, a handheld brain-bleed screener (HackPrinceton Fall 202
 
 The dashboard runs in two modes. **Demo** (default) plays a scripted story with mocked data. **Live** (`?live=1`) is driven by a real LangChain deep agent in [`/agent`](agent/README.md): real plan steps, about 100 simulations filling the grid, and Approve / Reject pauses that resume the agent. There is no hardware yet; the agent reads mock scans.
 
+For Photon's track the hand-off to the hospital is real. After the medic approves, the agent texts the on-call clinician the bleed map and a pre-alert over iMessage (Photon 2.0 beta), answers their texts on the same scan thread, and records ACCEPT or DECLINE; the dashboard shows all of it. The device, the scans and the patients are still simulated. How it works: [Hand-off over iMessage](agent/README.md#hand-off-over-imessage). How to run the demo: [`DEMO.md`](DEMO.md).
+
 > The product name lives in one place: `PRODUCT_NAME` in `lib/config.ts`.
 
 ## Run it
@@ -36,9 +38,17 @@ Pick a mock scan in the header (Temporal bleed, Clear, Uncertain) and press **Ru
 
 Click any simulation card to open it: the head mesh with the bleed and the potential change the solver computed for each scan spot, the simulated reading against the real scan, and a live log of what that card's agent is doing. Typing in the chat while a card is open rejects it with your text as the reason. Running a second scan on the same page re-scans the same patient against the saved baseline.
 
-The UI connects with the LangGraph SDK (`useStream` in `components/LiveBridge.tsx`); `lib/live.ts` maps agent state onto the same store the demo uses, and `lib/solver.ts` fetches the solver output for the detail view (`components/SimDetail.tsx`). Agent design, tools and skills: [`agent/README.md`](agent/README.md).
+With `PHOTON_PROJECT_ID` and `PHOTON_API_KEY` in `.env`, approving the pre-alert texts it by iMessage to the clinician who is on call. A third process, the bridge, carries their replies onto the scan thread:
 
-Types changed for live mode (`lib/types.ts`): `ScanStatus` gained `"pending"` (no result stated before approval) and `"rejected"`; `AgentStep` gained optional `parent`; `ApprovalRequest` gained optional `title`, `detail`, `approveLabel`, `rejectLabel`; `Simulation` gained optional `pass`, `by`, `note`, `reading`, `misfit`; `DashState` gained optional `reading` and `activity`.
+```bash
+cd agent && .venv/bin/python -m lucid.bridge
+```
+
+The agent panel then shows the hand-off status, the clinician's texts and the answers sent back. Without the keys the pre-alert is recorded as simulated. Start order, on-call setup and the two-minute script are in [`DEMO.md`](DEMO.md).
+
+The UI connects with the LangGraph SDK (`useStream` in `components/LiveBridge.tsx`); `lib/live.ts` maps agent state onto the same store the demo uses, and `lib/solver.ts` fetches the solver output for the detail view (`components/SimDetail.tsx`). While a hand-off is open, `LiveBridge.tsx` also reads its Store record every 2 s and joins runs this page did not start (the bridge's, when the clinician texts), re-reading the thread if the run already ended or the join fails; `lib/handoff.ts` merges the record into `handoff` and decides what the hand-off row shows. Agent design, tools and skills: [`agent/README.md`](agent/README.md).
+
+Types changed for live mode (`lib/types.ts`): `ScanStatus` gained `"pending"` (no result stated before approval) and `"rejected"`; `AgentStep` gained optional `parent`; `ApprovalRequest` gained optional `title`, `detail`, `approveLabel`, `rejectLabel`; `Simulation` gained optional `pass`, `by`, `note`, `reading`, `misfit`; `ChatMessage.role` gained `"clinician"`, `"call"` and `"event"` (a channel event, not a person), and `ChatMessage` optional `relayed` and `call` (`CallEntry`); `DashState` gained optional `reading`, `activity`, `baseline` and `handoff`. `Handoff` is new: `kind` (`"prealert"` or `"update"`), `to`, `sent_at`, `delivered_at`, `no_reply_at`, `channel`, `status` (`HandoffStatus`), `simulated`, `reply` (`HandoffReply`) and `call` (`HandoffCall`).
 
 ## The 2-minute demo story
 
@@ -64,7 +74,7 @@ Dev aid (dev builds only): in the browser console, `__demo.seek(60000)` jumps th
 
 - **Left:** folder tabs. *Scan* has the verdict, a summary line, spot progress, and the brain with its heatmap and 8 spot markers. *Simulations* has one row per region agent and a grid of hypothesis cards, best fit pinned first.
 - **Live data card:** rolling 10 s coil and NIR charts, a tilt dial (flat face, tick ring, a thin reticle marker for pitch and roll), and a signal-quality badge. While the device is disconnected the header is the only status: the card shows empty charts and dashes, with no marker and no badge.
-- **Agent panel:** one status row on top. Its 3×3 dot grid animates while the agent works, holds a pause shape while it waits for approval, and dims when idle; next to it are the current action, "Step n of 5", and seconds on the current action. Clicking the row expands the plan, with tool calls nested under each step. Below that: streamed messages, an inline approval card when the agent pauses, and a composer.
+- **Agent panel:** one status row on top. Its 3×3 dot grid animates while the agent works, holds a pause shape while it waits for approval, and dims when idle; next to it are the current action, "Step n of 5", and seconds on the current action. Clicking the row expands the plan, with tool calls nested under each step. Below that: streamed messages, an inline approval card when the agent pauses, and a composer. In live mode, once the medic approves a pre-alert, a hand-off row sits under the status row: who it went to and how far it got (Sent, Delivered, Accepted, Calling, No reply and so on); clicking it lists each step. The clinician's texts, Lucid's answers to them and any phone call show in the chat.
 
 **Agent trace**
 
@@ -90,7 +100,8 @@ components/
   BrainView.tsx      brain render + heatmap canvas + scan-spot markers + active-spot arc
   SimulationsTab.tsx region agent rows + simulation grid
   LiveData.tsx       coil / NIR rolling charts, tilt dial, signal quality
-  AgentPanel.tsx     status row with plan + tool calls, chat, approval card, composer
+  AgentPanel.tsx     status row with plan + tool calls, hand-off row (live), chat with the clinician's texts and calls, approval card, composer
+  LiveBridge.tsx     live mode: useStream to the agent; while a hand-off is open, polls its Store record and joins the bridge's runs
   TracePage.tsx      agent trace view: canvas, node details panel, logs dock
   TraceCanvas.tsx    n8n-style node graph with pan, zoom and fit
   icons.tsx          Phosphor icons (light) as inline SVG, plus spinner, ring and signal bars
@@ -100,6 +111,8 @@ lib/
   mock.ts            all mock generators (head geometry, scan maps, simulations, device stream)
   demo.ts            the demo timeline engine (store + story events)
   trace.ts           derives the agent trace graph, run states and log from the demo state
+  live.ts            live mode: maps agent state and stream events onto the same store the demo uses
+  handoff.ts         live mode: the hand-off from thread state and Store record, its row badge and steps (tests: handoff.test.mjs)
   useDash.ts         React hook that subscribes to the demo store
   brain.ts           compositing the brain render with heat
   config.ts          product name, demo length, sample rate, chart window

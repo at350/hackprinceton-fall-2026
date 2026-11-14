@@ -23,7 +23,13 @@ Without the dashboard:
 ```bash
 .venv/bin/python tests/test_agent.py     # decision rule, gates and state, no model calls
 .venv/bin/python tests/test_physics.py   # head model and the three mock scans
+.venv/bin/python tests/test_photon.py    # pre-alert request bodies, roster, HTTP layer, hand-off fallbacks
+.venv/bin/python tests/test_bridge.py    # the bridge and record_reply: roster, paused threads, delivery, silence
+.venv/bin/python tests/test_memory.py    # the re-scan update and clinician notes
+.venv/bin/python tests/test_voice.py     # call requests, decisions from a transcript, polling
 ```
+
+None of them calls a model or the network.
 
 ## Design
 
@@ -47,6 +53,16 @@ flowchart TD
     g1 -- "approved, bleed" --> pre["send_prealert + /report.md"]
     pre --> g2{{Medic approves?}}
     g1 -- approved --> store
+    g2 -- "approved: map image + pre-alert" --> ph[[Photon iMessage<br/>2.0 beta]]
+    g1 -- "approved re-scan: the change" --> ph
+    ph -- texts --> clin([On-call clinician, phone])
+    clin -- "On call · questions · ACCEPT / DECLINE" --> ph
+    ph -- "polled every 2 s" --> br[Bridge<br/>lucid.bridge]
+    br -- "tagged message on the scan thread" --> lead
+    br -- "answers, recap" --> ph
+    br -- "roster, hand-off records" --> store
+    br -- "60 s silence" --> vc[Cartesia voice agent<br/>outbound, Photon number]
+    vc -- "phone call" --> clin
 ```
 
 One scan, turn by turn:
@@ -56,8 +72,8 @@ One scan, turn by turn:
 3. **Rank and challenge.** `rank_fits` collects the four result files and applies the decision rule. In the same turn the skeptic reads the same files and tries to break the leading finding: other bleed types in the same place, neighbouring regions, the opposite side, or, when nothing fits, the smallest bleeds everywhere. Whatever it tests goes into the same pool of scores, so a real rival changes the outcome. It writes `/review.md`.
 4. **Re-scan if the read is poor.** If the outcome is "uncertain" and some spots had weak contact, the agent asks the medic to scan those spots again and waits. With the new readings it runs steps 2 and 3 again.
 5. **Propose.** The lead explains what the fit shows, writes the hand-off report to `/report.md`, and calls `submit_result`, which pauses for the medic.
-6. **Hand off.** If the medic approves a bleed, `send_prealert` pauses again, naming the on-call clinician, and on approval texts them the map image and the pre-alert by iMessage. The report stays on record.
-7. **Talk to the clinician.** Their texts come back onto the same thread through the bridge; the lead answers from the scan, records ACCEPT or DECLINE, and remembers a standing preference ("always include contact quality") for their next pre-alert.
+6. **Hand off.** If the medic approves a bleed, `send_prealert` pauses again, naming the on-call clinician, and on approval texts them the map image and the pre-alert by iMessage. The report stays on record. Without a Photon key the hand-off is recorded as simulated and nothing is sent.
+7. **Talk to the clinician.** Their texts come back onto the same thread through the bridge; the lead answers from the scan, records ACCEPT or DECLINE, and remembers a standing preference ("always include contact quality") for their next pre-alert. If no decision comes 60 s after the pre-alert or their last text, the bridge tells the medic and, with voice configured, phones the clinician.
 8. **Re-scan.** When the medic approves a later scan of the same patient, the clinician who accepted the hand-off is texted the change since the first scan (built in code from the two approved results), instead of a new pre-alert. The result card says so before it is approved.
 
 About 35 s from **Run scan** to the first pause on all three mock scans.
@@ -155,9 +171,9 @@ The UI connects with the LangGraph SDK (`useStream`) and reads thread state dire
 | `scan` | `ScanUpdate`: `status, region, volume_ml, confidence, map` (64x64). `status` is `"pending"` until the medic approves, `"rejected"` if they turn the proposal down |
 | `spots`, `reading` | The 8 scan spots and their raw readings |
 | `preview` | `{hypothesis_id, map}` while a result waits for approval |
-| `handoff` | After a pre-alert: `{to, message, report, sent_at, simulated}`, plus `channel: "imessage"`, `status` and `reply` when it went by iMessage (`to` is masked). Live delivery, replies and calls are in the Store record below |
+| `handoff` | After a pre-alert: `{to, message, report, sent_at, simulated}`, plus `channel: "imessage"`, `status` and `reply` when it went by iMessage (`to` is masked). After a re-scan update it is the update, with `kind: "update"`. Live delivery, replies and calls are in the Store record below |
 
-Tools also emit `custom` stream events (`scan`, `sims_reset`, `sims`, `preview`, `handoff`, `activity`) so the grid fills and the subagents' steps show while they are still working. Pauses arrive as interrupts; the UI resumes with `{decisions: [{type: "approve"}]}` or `{type: "reject", message}`.
+Tools and middleware also emit `custom` stream events (`scan`, `sims_reset`, `sims`, `preview`, `handoff`, `activity`, `todos`) so the grid fills and the subagents' steps show while they are still working. Pauses arrive as interrupts; the UI resumes with `{decisions: [{type: "approve"}]}` or `{type: "reject", message}`.
 
 Two extra routes (`lucid/http.py`, mounted through `langgraph.json`) serve the simulation detail view with a live pyEIT solve:
 
@@ -168,26 +184,55 @@ Two extra routes (`lucid/http.py`, mounted through `langgraph.json`) serve the s
 
 ## Hand-off over iMessage
 
-`PHOTON_PROJECT_ID` and `PHOTON_API_KEY` in `../.env` turn it on. A clinician texts "On call" to the Photon number they were assigned; "Off" takes them off. Then run the bridge next to the agent server:
+`PHOTON_PROJECT_ID` and `PHOTON_API_KEY` in `../.env` turn it on. A clinician texts "On call" to the Photon number they were assigned; "Off" takes them off. The pre-alert goes to the active clinician who came on call most recently. They must be on call when the medic approves the bleed result: the recipient is looked up then (state key `recipient`), named on the pre-alert card, and checked again just before the send. With nobody on call the card says so and nothing is sent.
+
+Then run the bridge next to the agent server:
 
 ```bash
 .venv/bin/python -m lucid.bridge                 # polls Photon every 2 s; LANGGRAPH_URL defaults to http://localhost:2024
 .venv/bin/python -m lucid.photon oncall +1...    # or put someone on call by hand (also: off, sync, roster)
 ```
 
-The bridge answers roster texts in code, sends anyone without an open hand-off one fixed line, and puts the clinician's other texts on the scan thread for the lead to answer. It follows delivery and, after `LUCID_CALL_AFTER_S` (60) without a decision following the latest clinician text, calls the clinician when voice is configured; otherwise it tells the medic. A text decision takes precedence over a phone decision. While the thread waits at an approval card it holds the text and replies "The medic is deciding. I will reply shortly."
+The bridge answers roster texts in code, sends anyone without an open hand-off (one sent to them in the last 12 hours) one fixed line, and puts the clinician's other texts on the scan thread for the lead to answer. While the thread waits at an approval card it holds the text and replies "The medic is deciding. I will reply shortly." It follows delivery and tells the medic when a pre-alert could not be delivered. Once per hand-off, if no decision has come `LUCID_CALL_AFTER_S` (60) after the later of the pre-alert and the clinician's latest text, it phones the clinician when voice is configured and their handle is a phone number; otherwise it tells the medic. A text decision takes precedence over a phone decision.
 
 | Store namespace, key | Value |
 |---|---|
 | `lucid/oncall`, handle | `{handle, space_id, agent_user_id, since, active}` |
-| `lucid/handoffs`, thread id | `{thread_id, patient_id, to, space_id, agent_user_id, sent_at, message, report, status, messages: [{id, kind, status}], reply, call, simulated}`; `status` is sent, delivered, read, failed or no_one_on_call; the bridge adds `delivered_at`, `clinician_at` and `no_reply_at`. A re-scan update appends `{id, kind: "update", status}` to the accepted record's `messages`; a re-scan on a new thread also gets its own record with `update_of` = the accepted thread |
+| `lucid/handoffs`, thread id | `{thread_id, patient_id, to, space_id, agent_user_id, sent_at, message, report, status, messages: [{id, kind, status}], reply, call, simulated}`. `status` is sent, delivered, failed or no_one_on_call (read is allowed, but Photon's beta reports no read status); a message's status is queued, delivered or failed. `reply` is `{decision, note, at, via}`. `call` is `{status, started_at, conversation_id, summary, duration_s}`, with status ringing, answered, no_answer, failed or cancelled. A failed send adds `error`; the bridge adds `delivered_at`, `clinician_at` and `no_reply_at`. A re-scan update appends `{id, kind: "update", status}` to the accepted record's `messages`; a re-scan on a new thread also gets its own record with `update_of` = the accepted thread |
 | `lucid/bridge`, `cursor` | `{since, handled: {message id: createdAt}}`, so a restart neither replays nor skips |
 
-On the thread, the bridge's messages are human messages tagged `[Receiving clinician, iMessage] ...`, `[Receiving clinician, phone call] ...` or `[Hand-off channel] ...`, and every run it starts carries metadata `{"source": "photon-bridge", "kind": "clinician" | "call" | "channel"}`. Answers to a channel event go to the medic only. `LUCID_PHOTON_PREFIX="[Lucid test] "` prefixes every text, for test servers.
+On the thread, the bridge's messages are human messages tagged `[Receiving clinician, iMessage] ...`, `[Receiving clinician, phone call] ...` or `[Hand-off channel] ...`, and every run it starts carries metadata `{"source": "photon-bridge", "kind": "clinician" | "call" | "channel"}`. Answers to a channel event go to the medic only.
+
+| Variable | Read by | Use |
+|---|---|---|
+| `PHOTON_PROJECT_ID`, `PHOTON_API_KEY` | agent server, bridge | Photon's HTTP API. Without them the pre-alert is simulated and the bridge does not start |
+| `LUCID_PHOTON_PREFIX` | agent server, bridge | Put in front of every text, e.g. `"[Lucid test] "` on test servers. Unset, the texts look like real clinical alerts |
+| `LANGGRAPH_URL` | bridge, `lucid.photon` | Where the agent server is. Default `http://localhost:2024` |
+| `LUCID_CALL_AFTER_S` | bridge | Silence before the call, or before the medic is told. Default 60 |
+| `LUCID_BRIDGE_LOG` | bridge | Log level. Default `INFO` |
+| `CARTESIA_API_KEY`, `CARTESIA_AGENT_ID`, `CARTESIA_FROM_NUMBER_ID` | bridge | Voice. Any one missing or empty means no calls: `CARTESIA_FROM_NUMBER_ID= .venv/bin/python -m lucid.bridge` runs the bridge without voice |
+
+Saving any file under `agent/` makes `langgraph dev` reload, which cancels a scan in progress. The demo runbook, with start order and preflight, is [`../DEMO.md`](../DEMO.md).
+
+### Phone call when the clinician is silent
+
+Built, and tested with the call stubbed; not yet proven on a real phone.
+
+The bridge puts "No reply after 60 s. Calling the on-call clinician." on the thread as a channel event, then places an outbound call through a Cartesia managed agent and a Photon SIP trunk (`lucid/voice.py`). The call agent gets the approved pre-alert, the report and the best fit per region as variables. It reads the pre-alert, answers from those, and asks for accept or decline. A question texted before the call is dialled restarts the clock instead.
+
+When the call ends, the decision is taken in code from the clinician's own words: accept or decline, not both, not negated; anything else is no decision. The transcript goes on the thread as `[Receiving clinician, phone call] decision: ...`, the lead records the decision, and its recap is texted to the clinician. An unanswered or failed call tells the medic and, unless a decision came in meanwhile, texts the clinician "I tried to call at ... about a pre-alert. Reply ACCEPT or DECLINE."
+
+Setup, from `agent/`: `.venv/bin/python -m lucid.voice setup`. It creates or reuses the Cartesia agent and Photon's default SIP profile, configures the profile, creates an outbound Cartesia SIP trunk, and imports the Photon number. Set `PHOTON_VOICE_NUMBER` (E.164) and re-run it once the number is bought; it resumes from what exists. Photon requires a payment method for outbound calls, and the number must be active before a call.
+
+The root `.env` supplies `PHOTON_PROJECT_ID`, `PHOTON_API_KEY`, `CARTESIA_API_KEY` and `PHOTON_VOICE_NUMBER`. Setup appends `PHOTON_SIP_USERNAME`, `PHOTON_SIP_PASSWORD`, `CARTESIA_INBOUND_USERNAME`, `CARTESIA_INBOUND_PASSWORD`, `CARTESIA_AGENT_ID` and `CARTESIA_FROM_NUMBER_ID`, so the file holds credentials. Photon shows the outbound SIP password once; if it is missing for a profile that already exists, setup stops for manual recovery rather than rotating it.
+
+Inbound calls to the number do not work. Cartesia refused every inbound trunk configuration tried, so the trunk is outbound only and the number is not assigned to an agent.
+
+`.venv/bin/python -m lucid.voice call +1...` places one test call and prints its outcome. Calls cost money; tell the person holding the phone first. The voice module re-reads the root `.env` each time it checks whether voice is on, so a running bridge picks up ids that setup added; variables already set in the process win.
 
 ## Configuration
 
-Everything is in `lucid/config.py`.
+Everything is in `lucid/config.py`, except the hand-off's variables, which are listed under [Hand-off over iMessage](#hand-off-over-imessage).
 
 | Setting | Default | Note |
 |---|---|---|
@@ -205,7 +250,10 @@ Extended thinking is switched off: every step is a short tool turn, and thinking
 - The head model is a coarse 2D proxy. pyEIT solves an electrical-impedance forward problem; we map its boundary voltages to a coil signal in dB and add a simple NIR absorption term. It is not a validated solver for the device.
 - One bleed per hypothesis. Volumes are good to about 5 mL at best; neighbouring volumes often tie.
 - The uncertain mock scan is picked so that a re-scan resolves it; with other noise draws it can stay uncertain.
-- The pre-alert is real (iMessage through Photon's beta) but goes to a teammate playing the on-call surgeon. Without a Photon key it is simulated.
+- The pre-alert, the answers and the re-scan update are real iMessages through Photon's 2.0 beta, but they go to a teammate playing the on-call surgeon. Without a Photon key the pre-alert is simulated and nothing is sent.
+- The patients are mock. Texts carry a patient id, made per dashboard page load, never a name.
+- Photon's beta reports no read receipts, so a hand-off never shows "read".
+- The phone call is built and tested with the call stubbed; it has not yet been proven on a real phone. Inbound calls to the number do not work.
 
 ## Layout
 
@@ -219,21 +267,14 @@ agent/
     decision.py         the decision rule
     photon.py           Photon iMessage over HTTP, the on-call roster
     bridge.py           the long-running process between Photon and the scan threads
+    voice.py            Cartesia calls over a Photon SIP trunk, and their setup
     state.py            state keys the dashboard reads
     backend.py          the file system (state + skills + store)
     store.py            SQLite LangGraph Store
     http.py             solver routes for the detail view
     config.py           models and thresholds
-    physics/            head model, mock scans, fit score, maps
-  skills/               three SKILL.md files
+    physics/            head model, mock scans, fit score, maps, the map image that is texted
+  skills/               four SKILL.md files
   data/                 precomputed lookup table and mesh
   tests/
 ```
-
-## Voice
-
-Voice escalation uses a Cartesia managed agent and a Photon SIP trunk. From `agent/`, run `.venv/bin/python -m lucid.voice setup`. The command creates or reuses the Cartesia agent and Photon default SIP profile, configures the Photon SIP profile, creates an outbound Cartesia trunk, and imports the Photon number. Inbound routing requires a working Cartesia inbound trunk and is currently not configured. Re-run it after setting `PHOTON_VOICE_NUMBER` to the purchased number in E.164 format; it resumes from the existing resources. Photon outbound access requires a payment method. The number must be active before placing a call.
-
-Root `.env` supplies `PHOTON_PROJECT_ID`, `PHOTON_API_KEY`, `CARTESIA_API_KEY`, and `PHOTON_VOICE_NUMBER`. Setup appends `PHOTON_SIP_USERNAME`, `PHOTON_SIP_PASSWORD`, `CARTESIA_INBOUND_USERNAME`, `CARTESIA_INBOUND_PASSWORD`, `CARTESIA_AGENT_ID`, and `CARTESIA_FROM_NUMBER_ID`; protect this file because it contains credentials. The Photon outbound password is shown only once. If the password is missing for an already-configured profile, setup stops for manual recovery rather than rotating it.
-
-After coordinating with the recipient, `.venv/bin/python -m lucid.voice call +1...` places one test call and prints its outcome. Calls incur charges. The voice module loads the root `.env` on import and checks it again when testing whether voice is enabled, so a running bridge can pick up IDs added by setup. Existing process environment values take precedence.
