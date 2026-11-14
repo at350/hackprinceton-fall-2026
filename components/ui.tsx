@@ -27,7 +27,7 @@ export function QualityBadge({ quality, live }: { quality: SignalQuality; live: 
   const q = live ? QUALITY[quality] : { label: "No signal", color: "var(--muted)", level: 1 as const };
   return (
     <span
-      className="inline-flex h-7 items-center gap-1.5 rounded-full border border-line px-2.5 text-[12px] font-medium transition-colors duration-200"
+      className="inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-line px-2.5 text-[12px] font-medium transition-colors duration-200"
       style={{ color: q.color }}
     >
       <IconBars level={q.level} size={14} />

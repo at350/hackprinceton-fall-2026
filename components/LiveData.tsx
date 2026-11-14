@@ -1,12 +1,13 @@
 "use client";
 
+import { motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
-import { CHART_WINDOW_MS, SAMPLE_RATE_HZ } from "@/lib/config";
+import { CHART_WINDOW_MS } from "@/lib/config";
 import { DEVICE_BUFFER_CAP, deviceBuffer } from "@/lib/mock";
 import type { DeviceSample } from "@/lib/types";
 import { useDash } from "@/lib/useDash";
 import { IconPlug } from "./icons";
-import { Panel, QualityBadge } from "./ui";
+import { EASE_ENTER, QualityBadge } from "./ui";
 
 /** Rolling 10 s line chart, drawn straight from the ring buffer every frame. */
 function SignalChart({ series, minSpan }: { series: "coil" | "nir"; minSpan: number }) {
@@ -112,15 +113,15 @@ function useLatest(live: boolean) {
 
 function ChartRow({ label, unit, value, children }: { label: string; unit: string; value: string; children: React.ReactNode }) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-1.5">
-      <div className="flex items-baseline justify-between">
-        <span className="label">{label}</span>
+    <div className="flex min-h-0 flex-1 items-stretch gap-4">
+      <div className="flex w-[92px] shrink-0 flex-col justify-center gap-1.5">
+        <span className="text-[13px] text-muted">{label}</span>
         <span className="flex items-baseline gap-1">
-          <span className="text-[18px] font-medium tracking-[-0.03em] text-text">{value}</span>
-          <span className="text-[11px] text-muted">{unit}</span>
+          <span className="text-[24px] font-medium leading-none tracking-[-0.04em] text-text">{value}</span>
+          <span className="text-[12px] text-muted">{unit}</span>
         </span>
       </div>
-      <div className="relative min-h-0 flex-1 overflow-hidden rounded-[8px] bg-raised px-2 py-1.5">{children}</div>
+      <div className="relative min-h-0 flex-1 py-1">{children}</div>
     </div>
   );
 }
@@ -129,21 +130,19 @@ function ChartRow({ label, unit, value, children }: { label: string; unit: strin
 function Tilt({ pitch, roll }: { pitch: number; roll: number }) {
   return (
     <div className="flex items-center gap-3">
-      <svg width="34" height="34" viewBox="-17 -17 34 34" aria-hidden>
+      <svg width="28" height="28" viewBox="-17 -17 34 34" aria-hidden>
         <circle r="16" fill="none" stroke="var(--line-strong)" />
         <g transform={`rotate(${-roll}) translate(0 ${Math.max(-10, Math.min(10, pitch * 0.4))})`} style={{ transition: "transform 120ms linear" }}>
           <line x1="-12" x2="12" y1="0" y2="0" stroke="var(--text)" strokeWidth="1.2" />
         </g>
         <circle r="1.6" fill="var(--primary)" />
       </svg>
-      <div className="flex gap-4 text-[12px]">
-        <span className="flex flex-col gap-1">
-          <span className="label">Pitch</span>
-          <span className="w-12 text-[14px] font-medium text-text">{pitch.toFixed(1)}°</span>
+      <div className="flex gap-3 whitespace-nowrap text-[13px] text-muted">
+        <span>
+          Pitch <span className="inline-block w-11 font-medium text-text">{pitch.toFixed(1)}°</span>
         </span>
-        <span className="flex flex-col gap-1">
-          <span className="label">Roll</span>
-          <span className="w-12 text-[14px] font-medium text-text">{roll.toFixed(1)}°</span>
+        <span>
+          Roll <span className="inline-block w-11 font-medium text-text">{roll.toFixed(1)}°</span>
         </span>
       </div>
     </div>
@@ -157,34 +156,30 @@ export function LiveData() {
   const latest = useLatest(live);
 
   return (
-    <Panel
-      delay={0.1}
-      className="h-[300px] shrink-0"
-      right={<QualityBadge quality={quality} live={live && latest !== null} />}
+    <motion.section
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.6, ease: EASE_ENTER, delay: 0.1 }}
+      className="surface raised relative flex h-[268px] shrink-0 flex-col gap-2 p-4"
     >
-      <div className="flex h-full flex-col gap-3 px-4 pb-4">
-        <ChartRow label="Coil signal" unit="dB" value={latest ? latest.coil_db.toFixed(1) : "--"}>
-          <SignalChart series="coil" minSpan={3} />
-        </ChartRow>
-        <ChartRow label="NIR" unit="a.u." value={latest ? latest.nir.toFixed(3) : "--"}>
-          <SignalChart series="nir" minSpan={0.06} />
-        </ChartRow>
-        <div className="flex items-center justify-between border-t border-line pt-3">
-          <Tilt pitch={latest?.imu.pitch ?? 0} roll={latest?.imu.roll ?? 0} />
-          <span className="flex flex-col items-end gap-1">
-            <span className="label">Sample rate</span>
-            <span className="text-[14px] font-medium text-text">{live ? `${SAMPLE_RATE_HZ} Hz` : "--"}</span>
-          </span>
-        </div>
+      <ChartRow label="Coil" unit="dB" value={latest ? latest.coil_db.toFixed(1) : "--"}>
+        <SignalChart series="coil" minSpan={3} />
+      </ChartRow>
+      <ChartRow label="NIR" unit="a.u." value={latest ? latest.nir.toFixed(3) : "--"}>
+        <SignalChart series="nir" minSpan={0.06} />
+      </ChartRow>
+      <div className="flex items-center justify-between gap-3 border-t border-[rgba(255,255,255,0.06)] pt-3">
+        <Tilt pitch={latest?.imu.pitch ?? 0} roll={latest?.imu.roll ?? 0} />
+        <QualityBadge quality={quality} live={live && latest !== null} />
       </div>
       {!live && (
-        <div className="absolute inset-x-4 top-0 bottom-[64px] grid place-items-center">
-          <span className="flex items-center gap-2 rounded-full border border-line bg-panel px-3 py-1.5 text-[13px] text-muted">
+        <div className="absolute inset-x-4 top-0 bottom-[60px] grid place-items-center">
+          <span className="flex items-center gap-2 rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(8,10,13,0.8)] px-3 py-1.5 text-[13px] text-muted">
             <IconPlug size={14} />
-            No signal · device disconnected
+            Device disconnected
           </span>
         </div>
       )}
-    </Panel>
+    </motion.section>
   );
 }
