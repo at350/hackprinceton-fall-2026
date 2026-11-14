@@ -298,3 +298,6 @@ body {
   border: 2px solid #20242a;
   box-shadow: 0 0 0 1px rgba(255,255,255,0.35);
 }
+
+.brain-arrival { transition: opacity 250ms ease-out; }
+@media (prefers-reduced-motion: reduce) { .brain-arrival { transition: none; } }

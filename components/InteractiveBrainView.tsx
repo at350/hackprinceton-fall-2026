@@ -19,7 +19,8 @@ function Cortex({ scan, spots, current }: BrainViewProps) {
   const onFailure = useCallback(() => { setReady(false); setFailed(true); }, []);
   return (
     <div className="relative" style={{ width: "min(100cqw, 100cqh)", height: "min(100cqw, 100cqh)" }} data-brain-view={failed ? "fallback" : ready ? "3d" : "loading"}>
-      {!ready && <><BrainCanvas scan={scan} /><BrainOverlay spots={spots} current={current} /></>}
+      {failed && <BrainCanvas scan={scan} />}
+      {!ready && <BrainOverlay spots={spots} current={current} />}
       {!failed && <Brain3DView scan={scan} spots={spots} current={current} onReady={onReady} onFailure={onFailure} />}
     </div>
   );

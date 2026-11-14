@@ -3,6 +3,7 @@ import { Geist } from "next/font/google";
 import localFont from "next/font/local";
 import { PRODUCT_NAME } from "@/lib/config";
 import "./globals.css";
+import { CortexPreload } from "@/components/CortexPreload";
 
 // Switzer (Fontshare, ITF Free Font License), self-hosted so the demo works offline.
 const switzer = localFont({
@@ -27,7 +28,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${switzer.variable} ${geist.variable} h-full antialiased`}>
-      <body className="h-full overflow-hidden">{children}</body>
+      <body className="h-full overflow-hidden"><CortexPreload />{children}</body>
     </html>
   );
 }
