@@ -33,6 +33,8 @@ const STATUS: Record<TraceNode["status"], { label: string; color: string; icon: 
 };
 
 const TONE = { primary: "var(--primary)", bleed: "var(--bleed-text)" };
+// Both edges fall in the body's empty padding at rest, so the fade only shows while scrolling.
+const FADE_EDGES = "linear-gradient(to bottom, transparent, black 24px, black calc(100% - 24px), transparent)";
 // 42px at full panel width, smaller as the panel narrows so short verdicts stay on one line.
 const BIG = "font-display text-[clamp(34px,2.9vw,42px)] font-medium leading-[1.04] tracking-[-0.045em]";
 
@@ -160,12 +162,20 @@ function Hero({ hero }: { hero: TraceHero }) {
   }
 }
 
-/** beautifului.dev Thinking row: chevron, label, count on the right; opens in place. */
+// Folds start open. Closing one keeps that kind closed on every node that has it,
+// until the page reloads.
+const foldOpen: Partial<Record<TraceFold["kind"], boolean>> = {};
+
+/** beautifului.dev Thinking row: chevron, label, count on the right; collapses in place. */
 function Fold({ fold, children }: { fold: TraceFold; children: ReactNode }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(foldOpen[fold.kind] ?? true);
+  const toggle = () => {
+    foldOpen[fold.kind] = !open;
+    setOpen(!open);
+  };
   return (
-    <div className="border-y border-line">
-      <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="flex h-11 w-full items-center gap-2 text-left text-[13.5px] text-text">
+    <div className="shrink-0 border-y border-line">
+      <button type="button" aria-expanded={open} onClick={toggle} className="flex h-11 w-full items-center gap-2 text-left text-[13.5px] text-text">
         <IconChevronDown
           size={12}
           className="shrink-0 text-muted transition-transform duration-200"
@@ -277,7 +287,11 @@ function Details({ node }: { node: TraceNode }) {
           {p.status ?? s.label}
         </span>
       </header>
-      <div className="scroll-thin flex min-h-0 flex-1 flex-col gap-7 overflow-y-auto px-6 pt-11 pb-5">
+      {/* On a short window an open fold scrolls here, fading at the edges rather than cutting a row. */}
+      <div
+        className="scroll-thin flex min-h-0 flex-1 flex-col gap-7 overflow-y-auto px-6 pt-11 pb-5"
+        style={{ maskImage: FADE_EDGES, WebkitMaskImage: FADE_EDGES }}
+      >
         {p.hero && <Hero hero={p.hero} />}
         {p.sentence && <p className={`text-[15px] leading-[1.55] ${p.quiet ? "text-muted" : "text-[rgba(237,238,240,0.9)]"}`}>{p.sentence}</p>}
         {p.actions && <Actions />}
