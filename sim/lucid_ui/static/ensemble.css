@@ -37,6 +37,20 @@
 }
 .ens-actions button:hover { border-color: var(--ink-3); }
 
+.ens-caption b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.ens-caption .muted { color: var(--ink-3); }
+.ens-replay { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--ink-3); }
+.ens-replay .chips { display: flex; gap: 4px; flex-wrap: wrap; }
+.ens-replay button {
+  min-width: 30px; height: 28px; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: var(--ink-2);
+  font: 500 12px var(--num); cursor: pointer; display: inline-flex; align-items: center; gap: 5px; padding: 0 8px;
+}
+.ens-replay button::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--frost); }
+.ens-replay button.bleed::before { background: var(--ember); }
+.ens-replay button:hover { color: var(--ink); border-color: var(--ink-3); }
+.ens-replay button[aria-pressed="true"] { background: var(--panel-2); color: var(--ink); border-color: var(--frost); }
+.ens-labels div.replayable { cursor: pointer; pointer-events: auto; }
+.ens-labels div.replayable:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
 @media (max-width: 1200px) { .ens-labels div span { display: none; } }
 @media (max-width: 900px) {
   .ens-hud { grid-template-columns: minmax(0, 1fr); gap: 8px; }

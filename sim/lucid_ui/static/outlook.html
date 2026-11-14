@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lucid what if</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="outlook.css">
+  <script type="importmap">
+    {"imports": {"three": "./vendor/three.module.js", "three/addons/": "./vendor/addons/"}}
+  </script>
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+        <circle cx="16" cy="16" r="13" fill="none" stroke="currentColor" stroke-width="1.6"/>
+        <path d="M3 16h7l3-6 4 12 3-6h9" fill="none" stroke="var(--ember)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      </svg>
+      <span>Lucid</span>
+    </div>
+    <nav class="views" aria-label="Views">
+      <a href="/">Live</a>
+      <a href="ensemble.html">16 heads</a>
+      <a href="outlook.html" aria-current="page">What if</a>
+    </nav>
+    <p class="scan-label" id="start-label">Loading</p>
+  </header>
+
+  <main class="out">
+    <section class="out-setup" aria-label="Starting point and conditions">
+      <div class="out-group">
+        <h2>The bleed now</h2>
+        <div class="out-fields">
+          <label class="field"><span class="field-label">Type</span>
+            <select id="kind">
+              <option value="subdural">Subdural (under the dura)</option>
+              <option value="epidural">Epidural (arterial, fast)</option>
+              <option value="intracerebral">Deep, in the brain</option>
+            </select>
+          </label>
+          <label class="field"><span class="field-label">Where</span>
+            <select id="where"></select>
+          </label>
+          <label class="field field-range"><span class="field-label">Volume now <output id="volume-out">30 ml</output></span>
+            <input type="range" id="volume" min="5" max="80" step="1" value="30">
+          </label>
+        </div>
+      </div>
+      <div class="out-group">
+        <h2>Your conditions <i class="swatch" style="--c: var(--lane-4)"></i></h2>
+        <div class="out-fields">
+          <label class="check"><input type="checkbox" id="thinners" checked> On blood thinners</label>
+          <label class="check"><input type="checkbox" id="high_bp"> High blood pressure</label>
+          <label class="field"><span class="field-label">Treatment</span>
+            <select id="treat_at">
+              <option value="off">None</option>
+              <option value="0.5">At 30 min</option>
+              <option value="1">At 1 h</option>
+              <option value="2" selected>At 2 h</option>
+              <option value="4">At 4 h</option>
+              <option value="6">At 6 h</option>
+            </select>
+          </label>
+          <label class="field"><span class="field-label">Surgery</span>
+            <select id="surgery_at">
+              <option value="off" selected>None</option>
+              <option value="2">At 2 h</option>
+              <option value="4">At 4 h</option>
+              <option value="6">At 6 h</option>
+            </select>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section class="out-stage" aria-label="The four lanes, playing over time">
+      <canvas id="out-scene"></canvas>
+      <div class="out-lanes" id="out-lanes"></div>
+    </section>
+
+    <section class="out-time" aria-label="Playback">
+      <button type="button" id="play" aria-label="Pause">Pause</button>
+      <input type="range" id="scrub" min="0" max="12" step="0.05" value="0" aria-label="Hours from now">
+      <output id="clock" class="clock">now</output>
+      <label class="field"><span class="field-label">Speed</span>
+        <select id="rate">
+          <option value="0.25">1 h in 4 s</option>
+          <option value="0.5" selected>1 h in 2 s</option>
+          <option value="1">1 h in 1 s</option>
+        </select>
+      </label>
+    </section>
+
+    <div class="out-legend" id="out-legend"></div>
+    <section class="out-charts" aria-label="Charts">
+      <div class="out-chart">
+        <h3>Volume</h3><p class="sub">ml; line is the average of 300 runs, band holds 8 in 10</p>
+        <div id="chart-volume"></div>
+      </div>
+      <div class="out-chart">
+        <h3>Midline shift</h3><p class="sub">mm the brain is pushed sideways</p>
+        <div id="chart-mls"></div>
+      </div>
+      <div class="out-chart">
+        <h3>What Lucid would read</h3><p class="sub">left/right difference in standard errors</p>
+        <div id="chart-z"></div>
+      </div>
+    </section>
+    <p class="out-note">Illustrative growth model built from published patterns (how often bleeds of each type expand, and what blood thinners, blood pressure, treatment and surgery do), not a prediction for any patient. The dashed lines mark 30 ml and 5 mm, common surgical reference points in guidelines.</p>
+  </main>
+
+  <div class="tooltip" id="tooltip" role="tooltip" hidden></div>
+  <script type="module" src="outlook.js"></script>
+</body>
+</html>

@@ -26,6 +26,23 @@ As readings come in:
 - each brain shows its own explanation of the readings: "No bleed", or where its bleed is, how deep and how big, painted on its cortex;
 - when the scan ends (or on "Merge now"), the sixteen fly together, overlap as ghosts and resolve into one brain carrying the merged chance-of-blood map from all 500 heads. The merged map is that average, so the picture is the real computation.
 
+After the scan, **Replay a head** (or click a head's label) plays that one head on its own: it rebuilds spot by spot, showing how its guess changed with each reading. Then, if it has a bleed, it plays a 12-hour untreated forecast: the bleed grows on the cortex and the brain is pushed off the midline.
+
+**What if** (`/outlook.html`). One bleed, four ways it could go over the next 12 hours, playing in sync:
+- no treatment;
+- treated at 1 h, after a Lucid flag;
+- treated at 4 h, waiting for CT;
+- your conditions: blood thinners, high blood pressure, treatment time, surgery.
+
+It starts from the last scan's estimate (side, region, volume; surface or deep from the depth), or a demo bleed, and every input can be changed. Each lane shows a brain seen from the front (the patient's left on screen right, as on CT), with the bleed growing and the brain sliding off the dashed midline. A scrubber and play button drive all four, plus three charts: volume, midline shift, and what Lucid would read. The dashed lines are 30 ml and 5 mm, common surgical reference points.
+
+The growth model is `lucid_sim/progression.py`. It is illustrative, built from published patterns rather than fitted to patients:
+- epidurals can grow fast, acute subdurals more slowly, and about a third of deep bleeds expand early;
+- blood thinners and high blood pressure raise the chance and size of growth;
+- treatment cuts the growth still to come, and surgery removes most of the volume.
+
+Every lane uses the same 300 random runs, so the lanes differ only by their conditions.
+
 Standard library server with Server-Sent Events, three.js 0.160 vendored in `lucid_ui/static/vendor` (MIT), so it runs offline. Fonts come from Google Fonts and fall back to system fonts. `lucid_ui/make_brain.py` rebuilds `static/brain.json` from nilearn's fsaverage5 files.
 
 ## TODO (hardware, blocks calibration)

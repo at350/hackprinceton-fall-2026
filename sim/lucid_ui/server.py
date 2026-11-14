@@ -31,6 +31,8 @@ from lucid_interp.live import LiveScan
 from lucid_interp.locate import PRIORS
 from lucid_sim.anatomy import DEFAULT_SPOTS, HEAD_RADIUS_MM
 from lucid_sim.hardware import COLUMNS, DEFAULT_DETECTOR, DETECTORS, parse_frame, to_units
+from lucid_sim.progression import (FLAG_Z, GUIDE_MLS_MM, GUIDE_VOLUME_ML, PRESETS, Conditions, outlook,
+                                   simulate_growth)
 
 from .make_brain import OUT as BRAIN_PATH
 from .make_brain import load as load_brain
@@ -226,9 +228,16 @@ class Runner:
             dep_out = np.maximum(np.maximum(depth - self.brain_depth, self.brain_depth - depth - thick), 0)
             heat = np.exp(-(np.hypot(lat_out, dep_out) / 8.0) ** 2)
             side, region = _nearest(u)
+            volume = np.pi * lateral**2 * thick / 1000
+            kind = "subdural" if depth <= prior.outer_layer_mm + 10 else "intracerebral"
+            t, runs = simulate_growth(max(volume, 1.0), kind, PRESETS[0], hours=12, dt_h=0.5, n=200, seed=i)
             tiles.append({"bleed": True, "cortex": base64.b64encode((heat * 255).astype(np.uint8).tobytes()).decode(),
-                          "label": f"{'Left' if side == 'L' else 'Right'} {region}, {depth:.0f} mm deep, "
-                                   f"{np.pi * lateral**2 * thick / 1000:.0f} ml"})
+                          "label": f"{'Left' if side == 'L' else 'Right'} {region}, {depth:.0f} mm deep, {volume:.0f} ml",
+                          "kind": kind, "side": side,
+                          "params": {"dir": _round(u, 4), "lateral": float(lateral), "thick": float(thick),
+                                     "depth": float(depth), "volume": float(volume)},
+                          "forecast": {"t": _round(t, 2), "mean": _round(runs.mean(axis=0), 1),
+                                       "p90": _round(np.percentile(runs, 90, axis=0), 1)}})
         return tiles
 
 
@@ -286,6 +295,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json({"source": self.app.source, "scenarios": {k: v[0] for k, v in SCENARIOS.items()}})
         if url.path == "/api/start":
             return self._json(self.app.start(q))
+        if url.path == "/api/outlook":
+            return self._json(self.app.outlook(q))
         if url.path == "/api/follow":
             if self.app.runner.scan is None:
                 return self._json({"ok": False}, 409)
@@ -319,6 +330,11 @@ class App:
         self.hub = Hub()
         self.runner = Runner(self.hub, detector)
 
+    def outlook(self, q: dict) -> dict:
+        scan = self.runner.scan
+        latest = scan.location.summary if scan is not None and scan.location is not None else None
+        return outlook_payload(q, latest)
+
     def start(self, q: dict) -> dict:
         speed = float(q.get("speed", 1.0))
         if self.source["kind"] == "serial":
@@ -335,6 +351,41 @@ class App:
             lines, medium, label, truth = sim_source(key, seed, float(q.get("artifacts", 0.2)))
             self.runner.start(lines, speed=speed, medium=medium, label=label, truth=truth)
         return {"ok": True}
+
+
+def _flag(q: dict, key: str) -> bool:
+    return q.get(key, "0") in ("1", "true", "yes")
+
+
+def _hours(q: dict, key: str):
+    v = q.get(key, "")
+    return float(v) if v not in ("", "off", "none") else None
+
+
+def outlook_payload(q: dict, latest: dict | None) -> dict:
+    """Progression lanes for the What-if screen, starting from the request, else the latest scan, else a demo."""
+    side, region, volume, kind, source = "L", "temporal", 30.0, "subdural", "demo"
+    if latest and latest.get("status") in ("localized", "weak") and latest.get("volume_ml"):
+        side, region = latest["side"], latest["region"]
+        volume = float(np.clip(latest["volume_ml"], 5, 120))
+        kind = "subdural" if latest.get("depth_mm", 20) <= 22 else "intracerebral"
+        source = "scan"
+    side, region = q.get("side", side), q.get("region", region)
+    volume, kind = float(q.get("volume", volume)), q.get("kind", kind)
+    spot = f"{side}-{region}"
+    custom = Conditions("Your conditions", blood_thinners=_flag(q, "thinners"), high_bp=_flag(q, "high_bp"),
+                        treat_at_h=_hours(q, "treat_at"), surgery_at_h=_hours(q, "surgery_at"))
+    out = outlook(volume, kind, spot, lanes=PRESETS + (custom,), hours=12.0, n=300)
+    centre, depth, thick, spread = ls.Bleed(spot, volume, kind).geometry(ls.HUMAN)
+    return _clean({
+        "start": {"side": side, "region": region, "volume": volume, "kind": kind, "source": source,
+                  "dir": _round(centre, 4), "depth": depth, "thick": thick, "lateral": max(spread, thick / 2)},
+        "t": _round(out["t"], 2),
+        "lanes": [{**lane, "volume": {k: _round(v, 2) for k, v in lane["volume"].items()},
+                   "mls": {k: _round(v, 2) for k, v in lane["mls"].items()}, "z": _round(lane["z"], 2)}
+                  for lane in out["lanes"]],
+        "guides": {"volume_ml": GUIDE_VOLUME_ML, "mls_mm": GUIDE_MLS_MM, "flag_z": FLAG_Z},
+    })
 
 
 def main(argv=None):

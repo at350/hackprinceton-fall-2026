@@ -97,3 +97,22 @@ def test_diode_is_square_law_low_and_linear_high():
     assert low[1] / low[0] == pytest.approx(10, rel=0.15)  # +10 dB of power -> 10x output
     high = det.volts(np.array([20.0, 26.0206]))  # 3.16 V and 6.32 V peak
     assert high[1] - high[0] == pytest.approx(3.16, rel=0.05)  # follows the peak minus a fixed drop
+
+
+def test_progression_treatment_and_thinners_order():
+    from lucid_sim.progression import PRESETS, Conditions, outlook, simulate_growth
+
+    o = outlook(20, "subdural", "L-temporal", lanes=PRESETS + (Conditions("thinners", blood_thinners=True),))
+    end = {lane["name"]: lane["end_volume_ml"] for lane in o["lanes"]}
+    (untreated, early, late), thinners = (end[c.name] for c in PRESETS), end["thinners"]
+    assert early < late <= untreated < thinners
+    assert all(lane["volume"]["mean"][0] == pytest.approx(20) for lane in o["lanes"])
+    t, v = simulate_growth(40, "epidural", Conditions("surgery", surgery_at_h=3))
+    assert (v[:, -1] < 0.2 * v.max(axis=1)).all()  # surgery takes most of it out
+
+
+def test_lucid_reading_grows_with_volume():
+    from lucid_sim.progression import lucid_z
+
+    z = lucid_z([0, 5, 15, 40], "subdural", "R-parietal")
+    assert z[0] == 0 and (np.diff(z) > 0).all()
