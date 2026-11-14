@@ -1,6 +1,9 @@
 /** Axial scan-map projection. Head frame: +x right, +y nose, +z up, in mm. */
 export type Point3 = readonly [number, number, number];
 const RX = 0.676, RY = 0.92;
+export const RIM_HEAT_BAND = 12 * Math.PI / 180;
+const COVERAGE_BLEND_BAND = 2 * Math.PI / 180;
+const smooth = (t: number) => { const k = Math.max(0, Math.min(1, t)); return k * k * (3 - 2 * k); };
 
 export function scalpSpot3D(spot: number): Point3 {
   const a = spot * Math.PI / 4;
@@ -28,7 +31,19 @@ export function projectAxialMap([x, y, z]: Point3) {
   return { u: (mapX + 1) / 2, v: (mapY + 1) / 2, radius, angle };
 }
 
-/** RGBA8: likelihood and the 2D renderer's coverage rule, without inference. */
+/** Keep the upper map unchanged; continue rim coverage, with a short heat tail. */
+export function projectCortexMap(point: Point3) {
+  const p = projectAxialMap(point);
+  const below = Math.max(0, (p.radius / 0.97 - 1) * Math.PI / 2);
+  const scale = p.radius > 0.97 ? 0.97 / p.radius : 1;
+  return {
+    u: 0.5 + (p.u - 0.5) * scale, v: 0.5 + (p.v - 0.5) * scale,
+    coverageBlend: smooth(below / COVERAGE_BLEND_BAND),
+    heatOpacity: 1 - smooth(below / RIM_HEAT_BAND),
+  };
+}
+
+/** RGBA8: likelihood, coverage, unused, and the axial grid's valid footprint. */
 export function mapTextureData(map: readonly (readonly number[])[] | null) {
   const size = map?.length || 1;
   if (size > 512 || (map?.length && map.some((row) => row.length !== size))) throw new RangeError("Invalid axial map dimensions");
@@ -39,17 +54,23 @@ export function mapTextureData(map: readonly (readonly number[])[] | null) {
     const offset = (row * size + col) * 4;
     data[offset] = Math.round(value * 255);
     data[offset + 1] = Math.round(Math.min(1, value / 0.06) * 255);
-    data[offset + 3] = 255;
+    // Outside-head texels are padding, not evidence of an unscanned side.
+    // Filtering this mask lets the rim coverage ignore padding, while zeros
+    // INSIDE the head remain unscanned. R/G are unchanged for the upper map.
+    const x = size > 1 ? col * 2 / (size - 1) - 1 : 0;
+    const y = size > 1 ? row * 2 / (size - 1) - 1 : 0;
+    data[offset + 3] = Math.hypot(x / RX, y / RY) <= 0.97 ? 255 : 0;
   }
   return { size, data };
 }
 
 export function mapVertexAttributes(positions: ArrayLike<number>) {
-  const count = positions.length / 3, uv = new Float32Array(count * 2), head = new Float32Array(positions.length);
+  const count = positions.length / 3, uv = new Float32Array(count * 2), head = new Float32Array(positions.length), extension = new Float32Array(count * 2);
   for (let i = 0; i < count; i++) {
     const point = displayToHead([positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]]);
-    const p = projectAxialMap(point);
+    const p = projectCortexMap(point);
     head.set(point, i * 3); uv[i * 2] = p.u; uv[i * 2 + 1] = p.v;
+    extension[i * 2] = p.coverageBlend; extension[i * 2 + 1] = p.heatOpacity;
   }
-  return { uv, head };
+  return { uv, head, extension };
 }
