@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { demo } from "@/lib/demo";
 import type { AgentStep, ChatMessage } from "@/lib/types";
 import { useDash } from "@/lib/useDash";
-import { IconArrowUp, IconCheck, IconTool, IconX, Spinner } from "./icons";
+import { IconArrowUp, IconCheck, IconChevronDown, IconTool, IconX, Spinner } from "./icons";
 
 // Beautiful UI motion.
 const EASE_UI = [0.23, 1, 0.32, 1] as const;
@@ -138,16 +138,11 @@ function Trace({ steps }: { steps: AgentStep[] }) {
         <span className="shrink-0 text-muted">
           {done}/{todos.length}
         </span>
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 16 16"
+        <IconChevronDown
+          size={14}
           className="ml-auto text-muted transition-transform duration-300"
           style={{ transform: open ? "rotate(180deg)" : "none" }}
-          aria-hidden
-        >
-          <path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+        />
       </button>
       <div
         className="grid transition-[grid-template-rows,opacity] duration-[400ms]"

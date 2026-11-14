@@ -2,139 +2,77 @@ import type { SVGProps } from "react";
 
 type P = SVGProps<SVGSVGElement> & { size?: number };
 
-function Svg({ size = 16, children, ...rest }: P) {
+/**
+ * Hugeicons (stroke rounded, 24px grid, MIT) embedded as SVG so there is no
+ * extra dependency. Every icon uses the set's own 1.5 stroke for consistency.
+ */
+function Svg({ size = 16, body, ...rest }: P & { body: string }) {
   return (
     <svg
       width={size}
       height={size}
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.4}
-      strokeLinecap="round"
-      strokeLinejoin="round"
+      viewBox="0 0 24 24"
       aria-hidden
+      dangerouslySetInnerHTML={{ __html: body }}
       {...rest}
-    >
-      {children}
-    </svg>
+      strokeWidth={1.5}
+    />
   );
 }
 
-/** Bleed likely: warning triangle. */
-export const IconAlert = (p: P) => (
-  <Svg {...p}>
-    <path d="M8 2.2 14.3 13.2H1.7Z" />
-    <path d="M8 6.4v3.2M8 11.4v.1" />
-  </Svg>
-);
+/** Hugeicons alert-02 */
+export const IconAlert = (p: P) => <Svg {...p} body={"<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M13.925 21h-3.85c-4.63 0-6.945 0-7.799-1.506c-.853-1.506.331-3.503 2.7-7.495L6.9 8.753C9.176 4.918 10.313 3 12 3s2.824 1.918 5.1 5.753L19.023 12c2.369 3.992 3.553 5.989 2.7 7.495C20.87 21 18.555 21 13.924 21M12 9v4\"/><path d=\"M12.125 16.75H12m.25 0a.25.25 0 1 1-.5 0a.25.25 0 0 1 .5 0\"/></g>"} />;
 
-/** Uncertain: question in circle. */
-export const IconQuestion = (p: P) => (
-  <Svg {...p}>
-    <circle cx="8" cy="8" r="6.2" />
-    <path d="M6.3 6.3a1.8 1.8 0 1 1 2.5 1.6c-.5.2-.8.6-.8 1.1v.4M8 11.3v.1" />
-  </Svg>
-);
+/** Hugeicons help-circle */
+export const IconQuestion = (p: P) => <Svg {...p} body={"<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M9.5 9.5a2.5 2.5 0 1 1 3.912 2.064C12.728 12.032 12 12.672 12 13.5m.125 3.25H12m.25 0a.25.25 0 1 1-.5 0a.25.25 0 0 1 .5 0\"/></g>"} />;
 
-/** No bleed seen: shield with check. */
-export const IconShieldCheck = (p: P) => (
-  <Svg {...p}>
-    <path d="M8 1.8 13 3.6v4c0 3.1-2.1 5.4-5 6.6-2.9-1.2-5-3.5-5-6.6v-4Z" />
-    <path d="m5.8 8 1.5 1.5 3-3" />
-  </Svg>
-);
+/** Hugeicons security-check */
+export const IconShieldCheck = (p: P) => <Svg {...p} body={"<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M18.709 3.495C16.817 2.554 14.5 2 12 2s-4.816.554-6.709 1.495c-.928.462-1.392.693-1.841 1.419S3 6.342 3 7.748v3.49c0 5.683 4.542 8.842 7.173 10.196c.734.377 1.1.566 1.827.566s1.093-.189 1.827-.566C16.457 20.08 21 16.92 21 11.237V7.748c0-1.406 0-2.108-.45-2.834s-.913-.957-1.841-1.419\"/><path d=\"M9 11.5s1.408.252 2 2c0 0 1.5-3 4-4\"/></g>"} />;
 
-export const IconCheck = (p: P) => (
-  <Svg {...p}>
-    <path d="m3.5 8.3 2.8 2.8 6.2-6.2" />
-  </Svg>
-);
+/** Hugeicons tick-02 */
+export const IconCheck = (p: P) => <Svg {...p} body={"<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"m5 14l3.5 3.5L19 6.5\"/>"} />;
 
-export const IconX = (p: P) => (
-  <Svg {...p}>
-    <path d="m4 4 8 8M12 4l-8 8" />
-  </Svg>
-);
+/** Hugeicons cancel-01 */
+export const IconX = (p: P) => <Svg {...p} body={"<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M18 6L6 18m12 0L6 6\"/>"} />;
 
-export const IconClock = (p: P) => (
-  <Svg {...p}>
-    <circle cx="8" cy="8" r="6.2" />
-    <path d="M8 4.8V8l2.2 1.4" />
-  </Svg>
-);
+/** Hugeicons clock-01 */
+export const IconClock = (p: P) => <Svg {...p} body={"<g fill=\"none\" stroke=\"currentColor\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M12 8v4l2 2\"/></g>"} />;
 
-export const IconInfo = (p: P) => (
-  <Svg {...p}>
-    <circle cx="8" cy="8" r="6.2" />
-    <path d="M8 7.2v4M8 4.9v.1" />
-  </Svg>
-);
+/** Hugeicons information-circle */
+export const IconInfo = (p: P) => <Svg {...p} body={"<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M12 16v-4m.125-3.75H12m.25 0a.25.25 0 1 0-.5 0a.25.25 0 0 0 .5 0\"/></g>"} />;
 
-export const IconArrowRight = (p: P) => (
-  <Svg {...p}>
-    <path d="M3 8h10M9 4l4 4-4 4" />
-  </Svg>
-);
+/** Hugeicons arrow-right-02 */
+export const IconArrowRight = (p: P) => <Svg {...p} body={"<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M18.5 12H5m8 6s6-4.419 6-6s-6-6-6-6\"/>"} />;
 
-export const IconArrowUp = (p: P) => (
-  <Svg {...p}>
-    <path d="M8 13V3M4 7l4-4 4 4" />
-  </Svg>
-);
+/** Hugeicons arrow-up-02 */
+export const IconArrowUp = (p: P) => <Svg {...p} body={"<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M12 5.5V19m6-8s-4.419-6-6-6s-6 6-6 6\"/>"} />;
 
-export const IconPlay = (p: P) => (
-  <Svg {...p}>
-    <path d="M5 3.2v9.6L12.5 8Z" fill="currentColor" stroke="none" />
-  </Svg>
-);
+/** Hugeicons play */
+export const IconPlay = (p: P) => <Svg {...p} body={"<path fill=\"none\" stroke=\"currentColor\" stroke-linejoin=\"round\" d=\"M18.89 12.846c-.353 1.343-2.023 2.292-5.364 4.19c-3.23 1.835-4.845 2.752-6.146 2.384a3.25 3.25 0 0 1-1.424-.841C5 17.614 5 15.743 5 12s0-5.614.956-6.579a3.25 3.25 0 0 1 1.424-.84c1.301-.37 2.916.548 6.146 2.383c3.34 1.898 5.011 2.847 5.365 4.19a3.3 3.3 0 0 1 0 1.692Z\"/>"} />;
 
-export const IconPause = (p: P) => (
-  <Svg {...p}>
-    <path d="M5.5 3.5v9M10.5 3.5v9" strokeWidth={1.8} />
-  </Svg>
-);
+/** Hugeicons pause */
+export const IconPause = (p: P) => <Svg {...p} body={"<path fill=\"none\" stroke=\"currentColor\" d=\"M4 7c0-1.414 0-2.121.44-2.56C4.878 4 5.585 4 7 4s2.121 0 2.56.44C10 4.878 10 5.585 10 7v10c0 1.414 0 2.121-.44 2.56C9.122 20 8.415 20 7 20s-2.121 0-2.56-.44C4 19.122 4 18.415 4 17zm10 0c0-1.414 0-2.121.44-2.56C14.878 4 15.585 4 17 4s2.121 0 2.56.44C20 4.878 20 5.585 20 7v10c0 1.414 0 2.121-.44 2.56c-.439.44-1.146.44-2.56.44s-2.121 0-2.56-.44C14 19.122 14 18.415 14 17z\"/>"} />;
 
-export const IconRestart = (p: P) => (
-  <Svg {...p}>
-    <path d="M3 8a5 5 0 1 0 1.5-3.6M3 2.5v2.4h2.4" />
-  </Svg>
-);
+/** Hugeicons reload */
+export const IconRestart = (p: P) => <Svg {...p} body={"<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M16.5 8H18c1.414 0 2.121 0 2.56-.44C21 7.121 21 6.414 21 5V3.5\"/><path d=\"M3 12a9 9 0 0 1 9-9c3.571 0 6.095 1.73 8 4.083M21 12a9 9 0 0 1-9 9c-3.571 0-6.095-1.73-8-4.084\"/><path d=\"M7.5 16H6c-1.414 0-2.121 0-2.56.44C3 16.877 3 17.584 3 19v1.5\"/></g>"} />;
 
-export const IconPlug = (p: P) => (
-  <Svg {...p}>
-    <path d="M2.5 13.5 5 11M6 6 10 10M9.5 3.5 12.5 6.5M5 11a3 3 0 0 0 4.3 0l1.2-1.2L6.2 5.5 5 6.7A3 3 0 0 0 5 11Z" />
-    <path d="M2 2l12 12" />
-  </Svg>
-);
+/** Hugeicons unlink-02 */
+export const IconPlug = (p: P) => <Svg {...p} body={"<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\"><path d=\"m16.846 14.61l2.61-2.61A5.272 5.272 0 1 0 12 4.544l-2.61 2.61m5.22 9.692L12 19.456A5.272 5.272 0 1 1 4.544 12l2.61-2.61\"/><path stroke-linejoin=\"round\" d=\"M22 17h-2.079M17 22v-2.079M2 7h2.079M7 2v2.079\"/></g>"} />;
 
-/** Connected: two linked chain halves. */
-export const IconLink = (p: P) => (
-  <Svg {...p}>
-    <path d="M6.8 9.2a2.6 2.6 0 0 0 3.7 0l2.2-2.2a2.6 2.6 0 0 0-3.7-3.7l-.9.9" />
-    <path d="M9.2 6.8a2.6 2.6 0 0 0-3.7 0L3.3 9a2.6 2.6 0 0 0 3.7 3.7l.9-.9" />
-  </Svg>
-);
+/** Hugeicons link-01 */
+export const IconLink = (p: P) => <Svg {...p} body={"<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\"><path d=\"m9.143 10.691l.207-.207a5.067 5.067 0 1 1 7.166 7.166l-2.866 2.866a5.067 5.067 0 1 1-7.166-7.166l.464-.464\"/><path d=\"m17.052 11.114l.464-.464a5.067 5.067 0 1 0-7.166-7.166L7.484 6.35a5.067 5.067 0 1 0 7.166 7.166l.207-.207\"/></g>"} />;
 
-export const IconTool = (p: P) => (
-  <Svg {...p}>
-    <path d="m3 5 3 3-3 3M8 11.5h5" />
-  </Svg>
-);
+/** Hugeicons command-line */
+export const IconTool = (p: P) => <Svg {...p} body={"<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M14 4h-4C6.229 4 4.343 4 3.172 5.172S2 8.229 2 12s0 5.657 1.172 6.828S6.229 20 10 20h4c3.771 0 5.657 0 6.828-1.172S22 15.771 22 12s0-5.657-1.172-6.828S17.771 4 14 4\"/><path d=\"m7 9l1.84 1.586c.773.666 1.16 1 1.16 1.414s-.387.748-1.16 1.414L7 15m6 1h4\"/></g>"} />;
 
-export const IconTarget = (p: P) => (
-  <Svg {...p}>
-    <circle cx="8" cy="8" r="6" />
-    <circle cx="8" cy="8" r="2.6" />
-    <circle cx="8" cy="8" r=".4" fill="currentColor" />
-  </Svg>
-);
+/** Hugeicons target-02 */
+export const IconTarget = (p: P) => <Svg {...p} body={"<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\"><path d=\"M17 12a5 5 0 1 1-5-5\"/><path d=\"M14 2.2q-.97-.198-2-.2C6.477 2 2 6.477 2 12s4.477 10 10 10s10-4.477 10-10q-.002-1.03-.2-2\"/><path stroke-linejoin=\"round\" d=\"m12.03 11.963l4.553-4.553m3.157-3.065l-.553-1.988a.48.48 0 0 0-.761-.24c-1.436 1.173-3 2.754-1.723 5.247c2.574 1.2 4.044-.418 5.17-1.779a.486.486 0 0 0-.248-.775z\"/></g>"} />;
 
-export const IconHand = (p: P) => (
-  <Svg {...p}>
-    <path d="M5.5 8V3.8a1 1 0 0 1 2 0V7.5M7.5 7V2.8a1 1 0 0 1 2 0V7M9.5 7V3.8a1 1 0 0 1 2 0v5.4c0 2.7-1.8 4.8-4.4 4.8-1.4 0-2.4-.6-3.2-1.8L2.6 9.8a1 1 0 0 1 1.6-1.2l1.3 1.2" />
-  </Svg>
-);
+/** Hugeicons hand-pointing-right-04 */
+export const IconHand = (p: P) => <Svg {...p} body={"<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M14.531 7.752h5.464a1.503 1.503 0 1 1 0 3.004h-6.51m3.004 0l-.027 1.054a2 2 0 0 1-.978 1.668m-.953-5.726H9.968m4.563 0l-2.76-2.594c-1.867-1.572-3.229-.746-3.985-.166L5.348 6.607C3.281 7.832 2.5 9.25 2.5 10.442v4.88c0 2.267 2.382 4.38 4.566 4.38l5.2.048a2.003 2.003 0 0 0 2.004-1.733l.19-1.54m-1.005-2.718h1.004c.375 0 .725-.103 1.025-.281m0 0l-.054 1.335a2 2 0 0 1-2.003 1.95h-1.004\"/>"} />;
+
+/** Hugeicons arrow-down-01 */
+export const IconChevronDown = (p: P) => <Svg {...p} body={"<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M18 9s-4.419 6-6 6s-6-6-6-6\"/>"} />;
 
 /** Signal bars: n of 3 filled. */
 export function IconBars({ level, size = 16 }: { level: 1 | 2 | 3; size?: number }) {
