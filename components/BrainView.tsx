@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { BRAIN_SRC, IMG, drawDimBrain, loadBrain, renderScanned } from "@/lib/brain";
 import { pointAt } from "@/lib/mock";
+import { useLatestSample } from "@/lib/useDevice";
 import type { ScanSpot, ScanUpdate } from "@/lib/types";
 
 // SVG space: map covers [-1, 1]; the view adds room for the spot markers.
@@ -89,6 +90,29 @@ function BrainCanvas({ scan }: { scan: ScanUpdate | null }) {
   );
 }
 
+const TILT_WARN = 20; // degrees
+
+/** Needle from the active spot: which way and how far the device leans off the scalp. */
+function TiltNeedle({ spot, pitch, roll }: { spot: ScanSpot; pitch: number; roll: number }) {
+  const p = pointAt(spot.angle, MARKER_R);
+  const tilt = Math.hypot(pitch, roll);
+  const warn = tilt > TILT_WARN;
+  const color = warn ? "var(--uncertain)" : "var(--primary)";
+  const len = 0.09 + Math.min(1, tilt / 30) * 0.24;
+  const dir = Math.atan2(-pitch, roll);
+  const ex = p.x + Math.cos(dir) * len;
+  const ey = p.y + Math.sin(dir) * len;
+  return (
+    <g style={{ transition: "all 120ms linear" }}>
+      <line x1={p.x} y1={p.y} x2={ex} y2={ey} stroke={color} strokeWidth={0.012} strokeLinecap="round" />
+      <circle cx={ex} cy={ey} r={0.014} fill={color} />
+      <text x={p.x} y={p.y + 0.125} textAnchor="middle" fontSize={0.052} fontWeight={500} fill={warn ? "var(--uncertain)" : "var(--muted)"}>
+        {warn ? "Tilted, hold flat" : `${Math.round(tilt)}° tilt`}
+      </text>
+    </g>
+  );
+}
+
 function Marker({ spot }: { spot: ScanSpot }) {
   const p = pointAt(spot.angle, MARKER_R);
   const r = 0.062;
@@ -135,6 +159,7 @@ function Marker({ spot }: { spot: ScanSpot }) {
 
 export function BrainView({ scan, spots, current, run }: { scan: ScanUpdate | null; spots: ScanSpot[]; current: number | null; run: number }) {
   const vb = `${-VIEW} ${-VIEW} ${VIEW * 2} ${VIEW * 2}`;
+  const sample = useLatestSample(current !== null);
   // The stretch of cortex under the coil, as a crisp arc along the brain's edge.
   const senseArc =
     current === null
@@ -150,6 +175,7 @@ export function BrainView({ scan, spots, current, run }: { scan: ScanUpdate | nu
         {senseArc && <path d={senseArc} fill="none" stroke="var(--primary)" strokeWidth={0.012} strokeLinecap="round" />}
         <text x={-0.98} y={0.02} fontSize={0.06} fontWeight={500} fill="var(--muted)" textAnchor="middle">L</text>
         <text x={0.98} y={0.02} fontSize={0.06} fontWeight={500} fill="var(--muted)" textAnchor="middle">R</text>
+        {current !== null && sample && <TiltNeedle spot={spots[current]} pitch={sample.imu.pitch} roll={sample.imu.roll} />}
         {spots.map((s) => (
           <Marker key={s.index} spot={s} />
         ))}

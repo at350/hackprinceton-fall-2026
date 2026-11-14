@@ -1,11 +1,11 @@
 "use client";
 
 import { motion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { CHART_WINDOW_MS } from "@/lib/config";
 import { DEVICE_BUFFER_CAP, deviceBuffer } from "@/lib/mock";
-import type { DeviceSample } from "@/lib/types";
 import { useDash } from "@/lib/useDash";
+import { useLatestSample } from "@/lib/useDevice";
 import { EASE_ENTER, QualityBadge } from "./ui";
 
 /** Rolling 10 s line chart, drawn straight from the ring buffer every frame. */
@@ -101,16 +101,6 @@ function SignalChart({ series, minSpan, live }: { series: "coil" | "nir"; minSpa
   return <canvas ref={ref} className="size-full" />;
 }
 
-function useLatest(live: boolean) {
-  const [s, setS] = useState<DeviceSample | null>(null);
-  useEffect(() => {
-    if (!live) return;
-    const id = setInterval(() => setS(deviceBuffer.latest), 120);
-    return () => clearInterval(id);
-  }, [live]);
-  return live ? s : null;
-}
-
 function ChartRow({ label, unit, value, children }: { label: string; unit: string; value: string; children: React.ReactNode }) {
   return (
     <div className="flex min-h-0 flex-1 items-stretch gap-4">
@@ -126,75 +116,11 @@ function ChartRow({ label, unit, value, children }: { label: string; unit: strin
   );
 }
 
-const CYAN_HEX = "#22c3e6";
-const TILT_MAX = 40; // degrees at the rim
-const DIAL_R = 30;
-const TICKS = Array.from({ length: 36 }, (_, i) => i * 10);
-
-/** Bubble level: where the device is pointing, read like an instrument. */
-function Tilt({ pitch, roll, live }: { pitch: number; roll: number; live: boolean }) {
-  // Bubble position, clamped to the dial.
-  let bx = (roll / TILT_MAX) * (DIAL_R - 6);
-  let by = (-pitch / TILT_MAX) * (DIAL_R - 6);
-  const d = Math.hypot(bx, by);
-  if (d > DIAL_R - 6) {
-    bx *= (DIAL_R - 6) / d;
-    by *= (DIAL_R - 6) / d;
-  }
-  const ring = (deg: number) => (deg / TILT_MAX) * (DIAL_R - 6);
-  return (
-    <div className="flex items-center gap-3.5">
-      <svg width="52" height="52" viewBox="-34 -34 68 68" aria-hidden>
-        {/* Flat dial: solid face, hairline rim. */}
-        <circle r={DIAL_R + 2} fill="#12151a" stroke="rgba(255,255,255,0.14)" strokeWidth="0.75" />
-        {/* Ticks every 10°, majors on the axes */}
-        {TICKS.map((a) => {
-          const major = a % 90 === 0;
-          const r1 = DIAL_R - (major ? 4.5 : 2.5);
-          const t = (a * Math.PI) / 180;
-          return (
-            <line
-              key={a}
-              x1={Math.sin(t) * r1}
-              y1={-Math.cos(t) * r1}
-              x2={Math.sin(t) * (DIAL_R - 0.8)}
-              y2={-Math.cos(t) * (DIAL_R - 0.8)}
-              stroke={major ? "rgba(237,238,240,0.9)" : "rgba(237,238,240,0.32)"}
-              strokeWidth={major ? 1.2 : 0.7}
-            />
-          );
-        })}
-        {/* 10° and 20° rings, fixed crosshair */}
-        <circle r={ring(10)} fill="none" stroke="rgba(255,255,255,0.22)" strokeWidth="0.6" />
-        <circle r={ring(20)} fill="none" stroke="rgba(255,255,255,0.14)" strokeWidth="0.6" strokeDasharray="1.2 1.6" />
-        <line x1={-DIAL_R + 6} x2={DIAL_R - 6} stroke="rgba(255,255,255,0.14)" strokeWidth="0.5" />
-        <line y1={-DIAL_R + 6} y2={DIAL_R - 6} stroke="rgba(255,255,255,0.14)" strokeWidth="0.5" />
-        {/* Tilt marker: thin reticle, flat colour, no glow. */}
-        {live && <g style={{ transform: `translate(${bx}px, ${by}px)`, transition: "transform 160ms linear" }} stroke={CYAN_HEX} strokeWidth="1.2" fill="none">
-          <circle r="3.6" />
-          <line x1="-7.5" x2="-5" />
-          <line x1="5" x2="7.5" />
-          <line y1="-7.5" y2="-5" />
-          <line y1="5" y2="7.5" />
-        </g>}
-      </svg>
-      <div className="flex flex-col gap-1 whitespace-nowrap text-[13px] leading-none text-muted">
-        <span className="flex justify-between gap-3">
-          Pitch <span className="w-12 text-right font-medium text-text">{live ? `${pitch.toFixed(1)}°` : "--"}</span>
-        </span>
-        <span className="flex justify-between gap-3">
-          Roll <span className="w-12 text-right font-medium text-text">{live ? `${roll.toFixed(1)}°` : "--"}</span>
-        </span>
-      </div>
-    </div>
-  );
-}
-
 export function LiveData() {
   const device = useDash((s) => s.device);
   const quality = useDash((s) => s.quality);
   const live = device !== "disconnected";
-  const latest = useLatest(live);
+  const latest = useLatestSample(live);
 
   return (
     <motion.section
@@ -210,7 +136,13 @@ export function LiveData() {
         <SignalChart series="nir" minSpan={0.06} live={live} />
       </ChartRow>
       <div className="flex items-center justify-between gap-3 border-t border-[rgba(255,255,255,0.06)] pt-3">
-        <Tilt pitch={latest?.imu.pitch ?? 0} roll={latest?.imu.roll ?? 0} live={live && latest !== null} />
+        {/* Tilt is shown on the brain view, at the active spot; here it is just the number. */}
+        <span className="text-[13px] text-muted">
+          Tilt{" "}
+          <span className="font-medium text-text">
+            {live && latest ? `${Math.round(Math.hypot(latest.imu.pitch, latest.imu.roll))}°` : "--"}
+          </span>
+        </span>
         {live && latest !== null && <QualityBadge quality={quality} live />}
       </div>
     </motion.section>

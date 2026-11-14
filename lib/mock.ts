@@ -282,7 +282,11 @@ function noise(t: number, rate: number, seed: number) {
 }
 
 let smoothBleed = 0;
+let smoothPitch = 0;
 let smoothRoll = 0;
+
+// Device lean against the scalp, per spot (degrees). A good hold is a few degrees.
+const SPOT_LEAN: [number, number][] = [[3, 2], [-4, 3], [5, -2], [-2, -4], [4, 3], [-3, -5], [2, 4], [-5, 2]];
 
 /** One ~50 Hz device sample at wall time t (ms). */
 export function deviceSample(t: number, ctx: DeviceContext): DeviceSample {
@@ -308,17 +312,23 @@ export function deviceSample(t: number, ctx: DeviceContext): DeviceSample {
     (ctx.quality === "weak" ? 0.012 : 0.003) * noise(t, 0.05, 3) -
     0.07 * smoothBleed;
 
-  const targetRoll = ctx.spot === null ? 0 : Math.sin((ctx.spot * 45 * Math.PI) / 180) * 32;
-  smoothRoll += (targetRoll - smoothRoll) * 0.03;
-  const pitchBase = ctx.spot === null ? 4 : Math.cos((ctx.spot * 45 * Math.PI) / 180) * 18;
+  // IMU: how far the device leans off the scalp's surface normal. Held still on
+  // a spot it is a few degrees; it swings while the medic moves between spots;
+  // a weak-contact read is a tilted hold.
+  let [tp, tr] = ctx.spot === null ? [2, 1] : SPOT_LEAN[ctx.spot];
+  if (ctx.moving) [tp, tr] = [14 * Math.sin(s * 1.3), 20 * Math.cos(s * 1.1)];
+  else if (ctx.quality === "weak") [tp, tr] = [14, -19];
+  smoothPitch += (tp - smoothPitch) * 0.05;
+  smoothRoll += (tr - smoothRoll) * 0.05;
+  const tremor = ctx.moving ? 1.5 : 0.6;
 
   return {
     t,
     coil_db: Math.round(coil * 100) / 100,
     nir: Math.round(nir * 10000) / 10000,
     imu: {
-      pitch: Math.round((pitchBase + 1.2 * noise(t, 0.002, 5) + shake * 0.6 * noise(t, 0.02, 9)) * 10) / 10,
-      roll: Math.round((smoothRoll + 1.4 * noise(t, 0.002, 7)) * 10) / 10,
+      pitch: Math.round((smoothPitch + 1.1 * noise(t, 0.0015, 5) + tremor * noise(t, 0.012, 9)) * 10) / 10,
+      roll: Math.round((smoothRoll + 1.3 * noise(t, 0.0015, 7) + tremor * noise(t, 0.012, 13)) * 10) / 10,
     },
     spot: ctx.spot ?? 0,
     quality: ctx.quality,
