@@ -172,3 +172,9 @@ export function Ring({ progress, size = 13 }: { progress: number; size?: number 
     </svg>
   );
 }
+
+/** Phosphor light (MIT), via api.iconify.design. */
+export const IconSliders = (p: P) => <Svg {...p} body={"<path fill=\"currentColor\" d=\"M40 86h34.6a30 30 0 0 0 58.8 0H216a6 6 0 0 0 0-12h-82.6a30 30 0 0 0-58.8 0H40a6 6 0 0 0 0 12m64-24a18 18 0 1 1-18 18a18 18 0 0 1 18-18m112 108h-18.6a30 30 0 0 0-58.8 0H40a6 6 0 0 0 0 12h98.6a30 30 0 0 0 58.8 0H216a6 6 0 0 0 0-12m-48 24a18 18 0 1 1 18-18a18 18 0 0 1-18 18\"/>"} />;
+
+/** Phosphor light (MIT), via api.iconify.design. */
+export const IconResetView = (p: P) => <Svg {...p} body={"<path fill=\"currentColor\" d=\"M222 128a94 94 0 0 1-92.74 94H128a93.43 93.43 0 0 1-64.5-25.65a6 6 0 1 1 8.24-8.72A82 82 0 1 0 70 70l-.19.19L39.44 98H72a6 6 0 0 1 0 12H24a6 6 0 0 1-6-6V56a6 6 0 0 1 12 0v34.34L61.63 61.4A94 94 0 0 1 222 128\"/>"} />;

@@ -13,7 +13,7 @@ const MARKER_R = 1.16;
 const FILL_MS = 1400;
 
 /** Canvas: dim brain everywhere, lit brain + heat where scanned, growing from the finished spot. */
-function BrainCanvas({ scan }: { scan: ScanUpdate | null }) {
+export function BrainCanvas({ scan }: { scan: ScanUpdate | null }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const prev = useRef<HTMLCanvasElement | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -38,7 +38,7 @@ function BrainCanvas({ scan }: { scan: ScanUpdate | null }) {
     const start = performance.now();
     let raf = 0;
     const frame = () => {
-      const k = Math.min(1, (performance.now() - start) / FILL_MS);
+      const k = matchMedia("(prefers-reduced-motion: reduce)").matches ? 1 : Math.min(1, (performance.now() - start) / FILL_MS);
       const e = 1 - Math.pow(1 - k, 3);
       ctx.clearRect(0, 0, size, size);
       drawDimBrain(ctx, size, 0.14);
@@ -130,7 +130,9 @@ function Marker({ spot }: { spot: ScanSpot }) {
   }
 }
 
-export function BrainView({ scan, spots, current, run }: { scan: ScanUpdate | null; spots: ScanSpot[]; current: number | null; run: number }) {
+export interface BrainViewProps { scan: ScanUpdate | null; spots: ScanSpot[]; current: number | null; run: number }
+
+export function BrainOverlay({ spots, current, groupRef }: Pick<BrainViewProps, "spots" | "current"> & { groupRef?: React.Ref<SVGGElement> }) {
   const vb = `${-VIEW} ${-VIEW} ${VIEW * 2} ${VIEW * 2}`;
   // The stretch of cortex under the coil, as a crisp arc along the brain's edge.
   const senseArc =
@@ -141,16 +143,23 @@ export function BrainView({ scan, spots, current, run }: { scan: ScanUpdate | nu
           return `${i ? "L" : "M"} ${p.x.toFixed(4)} ${p.y.toFixed(4)}`;
         }).join(" ");
   return (
-    <div className="relative" style={{ width: "min(100cqw, 100cqh)", height: "min(100cqw, 100cqh)" }}>
-      <BrainCanvas key={run} scan={scan} />
-      <svg viewBox={vb} className="absolute inset-0 size-full" role="img" aria-label="Brain from above with bleed-likelihood heatmap and 8 scan spots">
+    <svg viewBox={vb} className="pointer-events-none absolute inset-0 size-full" role="img" aria-label="Brain from above with bleed-likelihood heatmap and 8 scan spots">
+      <g ref={groupRef}>
         {senseArc && <path d={senseArc} fill="none" stroke="var(--primary)" strokeWidth={0.012} strokeLinecap="round" />}
         <text x={-0.98} y={0.02} fontSize={0.06} fontWeight={500} fill="var(--muted)" textAnchor="middle">L</text>
         <text x={0.98} y={0.02} fontSize={0.06} fontWeight={500} fill="var(--muted)" textAnchor="middle">R</text>
-        {spots.map((s) => (
-          <Marker key={s.index} spot={s} />
-        ))}
-      </svg>
+        {spots.map((s) => <Marker key={s.index} spot={s} />)}
+      </g>
+    </svg>
+  );
+}
+
+/** Also used when WebGL or the lazy cortex model is unavailable. */
+export function BrainView({ scan, spots, current, run }: BrainViewProps) {
+  return (
+    <div className="relative" style={{ width: "min(100cqw, 100cqh)", height: "min(100cqw, 100cqh)" }}>
+      <BrainCanvas key={run} scan={scan} />
+      <BrainOverlay spots={spots} current={current} />
     </div>
   );
 }
