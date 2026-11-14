@@ -3,9 +3,9 @@
 import { motion } from "motion/react";
 import { DEMO_LENGTH_MS } from "@/lib/config";
 import { demo } from "@/lib/demo";
-import type { DeviceStatus } from "@/lib/types";
+import type { DeviceStatus, ViewId } from "@/lib/types";
 import { formatClock, useDash } from "@/lib/useDash";
-import { IconArrowRight, IconClock, IconLink, IconPause, IconPlay, IconPlug, Spinner } from "./icons";
+import { IconArrowRight, IconClock, IconDashboard, IconLink, IconPause, IconPlay, IconPlug, IconWorkflow, Spinner } from "./icons";
 import { Logo } from "./Logo";
 import { EASE_ENTER, Swap } from "./ui";
 
@@ -69,6 +69,34 @@ function PlayDemo() {
   );
 }
 
+/** n8n's top-center Editor / Executions switch, here Dashboard / Agent trace. */
+function ViewSwitch() {
+  const view = useDash((s) => s.view);
+  const items: { id: ViewId; label: string; Icon: typeof IconDashboard }[] = [
+    { id: "dashboard", label: "Dashboard", Icon: IconDashboard },
+    { id: "trace", label: "Agent trace", Icon: IconWorkflow },
+  ];
+  return (
+    <div role="tablist" className="absolute top-1/2 left-1/2 flex -translate-x-1/2 -translate-y-1/2 gap-0.5 rounded-[10px] bg-[rgba(0,0,0,0.3)] p-1">
+      {items.map(({ id, label, Icon }) => (
+        <button
+          key={id}
+          type="button"
+          role="tab"
+          aria-selected={view === id}
+          onClick={() => demo.setView(id)}
+          className={`flex h-8 items-center gap-1.5 rounded-[7px] px-3 text-[13px] font-medium transition-colors duration-150 ${
+            view === id ? "bg-[rgba(255,255,255,0.12)] text-text" : "text-muted hover:text-text"
+          }`}
+        >
+          <Icon size={15} />
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function Header() {
   const playing = useDash((s) => s.playing);
   const sec = useDash((s) => Math.floor(s.t / 1000));
@@ -84,6 +112,7 @@ export function Header() {
         <Logo />
         <span className="h-5 w-px bg-line" />
         <DeviceStatusChip />
+        <ViewSwitch />
         <div className="ml-auto flex items-center gap-5">
           <Elapsed />
           <span className="h-5 w-px bg-line" />

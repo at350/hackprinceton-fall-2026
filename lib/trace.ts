@@ -123,7 +123,7 @@ export function deriveTrace(s: DashState): Trace {
     status: approval?.state === "pending" ? "waiting" : agentRunning ? "running" : s.steps.length ? "success" : "idle",
     startedAt: s.steps.length ? T.connectedAt + 1000 : null,
     endedAt: !agentRunning && s.steps.length && approval?.state !== "pending" ? t : null,
-    items: agentMsgs.length || null,
+    items: simsDone || null,
     input: scan ? [["map", `${scan.status}, ${scan.region}`]] : [],
     output: s.steps.filter((x) => x.kind === "todo").map((x) => [x.label, x.state]),
     reasoning: agentMsgs,

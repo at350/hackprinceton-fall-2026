@@ -92,9 +92,11 @@ export interface ApprovalRequest {
 // ---- Dashboard ------------------------------------------------------------
 
 export type TabId = "scan" | "simulations";
+export type ViewId = "dashboard" | "trace";
 
 export interface DashState {
   run: number; // increments on every restart
+  view: ViewId; // survives restarts
   t: number; // demo clock, ms
   playing: boolean;
   device: DeviceStatus;

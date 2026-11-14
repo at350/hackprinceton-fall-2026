@@ -17,6 +17,7 @@ import type {
   ScanStatus,
   Simulation,
   TabId,
+  ViewId,
 } from "./types";
 
 // ---- Story timing (demo clock, ms) ---------------------------------------
@@ -86,9 +87,10 @@ const TODOS: AgentStep[] = [
   { id: "todo-approve", kind: "todo", label: "Ask medic to confirm", state: "pending" },
 ];
 
-function initialState(run = 0): DashState {
+function initialState(run = 0, view: ViewId = "dashboard"): DashState {
   return {
     run,
+    view,
     t: 0,
     playing: true,
     device: "disconnected",
@@ -187,7 +189,7 @@ export class DemoStore {
 
   restart() {
     this.generation++;
-    this.state = initialState(this.state.run + 1);
+    this.state = initialState(this.state.run + 1, this.state.view);
     this.applied = 0;
     deviceBuffer.clear();
     this.emit();
@@ -209,6 +211,11 @@ export class DemoStore {
 
   togglePause() {
     this.set({ playing: !this.state.playing });
+    this.emit();
+  }
+
+  setView(view: ViewId) {
+    this.set({ view });
     this.emit();
   }
 
