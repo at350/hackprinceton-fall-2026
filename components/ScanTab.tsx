@@ -3,8 +3,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import type { ScanSpot, ScanUpdate } from "@/lib/types";
 import { useDash } from "@/lib/useDash";
-import { LIVE } from "@/lib/live";
-import { BrainView } from "./BrainView";
 import { InteractiveBrainView } from "./InteractiveBrainView";
 import { IconClock, Ring } from "./icons";
 import { EASE_ENTER, EASE_MASK, SCAN_STATUS } from "./ui";
@@ -114,11 +112,7 @@ export function ScanTab() {
 
       <div className="mt-2 min-h-0 flex-1" style={{ containerType: "size" }}>
         <div className="flex size-full items-center justify-center">
-          {/* Live maps remain 2D until the backend supplies a 3D bleed descriptor.
-              Choose by mode, before any live data arrives; never show demo heat. */}
-          {LIVE
-            ? <BrainView scan={scan} spots={spots} current={current} run={run} />
-            : <InteractiveBrainView scan={scan} spots={spots} current={current} run={run} />}
+          <InteractiveBrainView scan={scan} spots={spots} current={current} run={run} />
         </div>
       </div>
     </div>

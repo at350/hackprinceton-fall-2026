@@ -19,7 +19,7 @@ export default function Brain3DView({ scan, spots, current, onReady, onFailure }
     } catch { onFailure(); }
     return () => { active = false; scene.current?.dispose(); scene.current = null; };
   }, [onReady, onFailure]);
-  useEffect(() => { scene.current?.setScan(scan, spots.filter((spot) => spot.state === "done").map((spot) => spot.index)); }, [scan, spots]);
+  useEffect(() => { scene.current?.setScan(scan); }, [scan]);
 
   return (
     <div className="brain-arrival absolute inset-0" style={{ opacity: ready ? 1 : 0, pointerEvents: ready ? "auto" : "none" }}>

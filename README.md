@@ -158,4 +158,4 @@ Look and motion are taken from the references, not invented:
 
 ## Known limitations
 
-Demo mode uses the static 3D fsaverage6 cortex. Live mode uses the existing 2D brain so it displays the backend’s scan and preview maps faithfully, including clear, pending, and rejected results. Live 3D awaits a backend 3D bleed descriptor; the scripted demo lesion is never used in live mode.
+Demo and live mode use the same static 3D fsaverage6 cortex. Both render the supplied axial scan/preview map with an azimuthal projection; the projection displays the original likelihood values and does not infer a 3D lesion. The axial map does not cover the lower cortical surface, which stays dim when orbited. The 2D view is retained only for WebGL/model-loading failures. The offline closing leaves fold edges softer under magnification than the visual reference.

@@ -1,20 +1,16 @@
 import * as THREE from "three";
 import { heatRGB } from "@/components/ui";
 import { decodeCortex, CORTEX_URL } from "./brain-model";
-import { heatAttributes, scalpSpot3D } from "./brain-heat";
+import { mapTextureData, mapVertexAttributes, scalpSpot3D } from "./brain-heat";
 import type { ScanUpdate } from "./types";
 import { scanRevealRadius, surfaceNormals } from "./brain-geometry";
 
 const VIEW = 1.25;
 const vertexShader = `
   attribute float sulc;
-  attribute float heat;
-  attribute float before;
-  attribute float after;
+  attribute vec2 mapUV;
   attribute vec3 head;
-  varying float vHeat;
-  varying float vBefore;
-  varying float vAfter;
+  varying vec2 vMapUV;
   varying vec3 vHead;
   varying vec3 vNormal;
   varying vec3 vPosition;
@@ -22,23 +18,31 @@ const vertexShader = `
   void main() {
     vNormal = normalize(normalMatrix * normal);
     vPosition = position;
-    vSulc = sulc; vHeat = heat; vBefore = before; vAfter = after; vHead = head;
+    vSulc = sulc; vMapUV = mapUV; vHead = head;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
 const fragmentShader = `
   uniform sampler2D heatRamp;
+  uniform sampler2D beforeMap;
+  uniform sampler2D afterMap;
+  uniform float beforeSize;
+  uniform float afterSize;
   uniform vec3 origin;
   uniform float radius;
   varying vec3 vNormal;
   varying vec3 vPosition;
   varying float vSulc;
-  varying float vHeat;
-  varying float vBefore;
-  varying float vAfter;
+  varying vec2 vMapUV;
   varying vec3 vHead;
-  vec3 tissue(float coverage, vec3 cortex) {
-    float value = vHeat * coverage;
+  vec2 sampleMap(sampler2D field, float size) {
+    if (any(lessThan(vMapUV, vec2(0.0))) || any(greaterThan(vMapUV, vec2(1.0)))) return vec2(0.0);
+    // Align the map's sample coordinates with texel centres, as on the 2D grid.
+    return texture2D(field, (vMapUV * (size - 1.0) + 0.5) / size).rg;
+  }
+  vec3 tissue(vec2 sampleValue, vec3 cortex) {
+    float value = sampleValue.r;
+    float coverage = sampleValue.g;
     float alpha = smoothstep(0.2, 0.65, value) * 0.94;
     vec3 heat = texture2D(heatRamp, vec2(clamp((value - 0.15) / 0.75, 0.0, 1.0), 0.5)).rgb;
     // Treat likelihood as a surface tint under the same illumination and cavity.
@@ -58,7 +62,7 @@ const fragmentShader = `
     float flank = mix(0.45, 1.0, smoothstep(-0.15, 0.75, n.z));
     vec3 cortex = (vec3(0.58, 0.64, 0.68) * light * crown + vec3(sheen)) * ao * flank * (1.0 - medial * 0.9);
     float reveal = 1.0 - smoothstep(radius - 1.2, radius + 1.2, distance(vHead, origin));
-    gl_FragColor = vec4(mix(tissue(vBefore, cortex), tissue(vAfter, cortex), reveal), 1.0);
+    gl_FragColor = vec4(mix(tissue(sampleMap(beforeMap, beforeSize), cortex), tissue(sampleMap(afterMap, afterSize), cortex), reveal), 1.0);
   }
 `;
 
@@ -79,14 +83,22 @@ export function createBrainScene(canvas: HTMLCanvasElement, overlay: SVGGElement
   const ramp = new THREE.DataTexture(rampBytes, 256, 1);
   ramp.minFilter = ramp.magFilter = THREE.LinearFilter;
   ramp.needsUpdate = true;
+  function textureFor(map: number[][] | null) {
+    const packed = mapTextureData(map);
+    const texture = new THREE.DataTexture(packed.data, packed.size, packed.size);
+    texture.minFilter = texture.magFilter = THREE.LinearFilter;
+    texture.needsUpdate = true;
+    return { texture, size: packed.size };
+  }
+  const initialBefore = textureFor(null), initialAfter = textureFor(null);
   const uniforms = {
-    heatRamp: { value: ramp }, origin: { value: new THREE.Vector3() }, radius: { value: 300 },
+    heatRamp: { value: ramp }, beforeMap: { value: initialBefore.texture }, afterMap: { value: initialAfter.texture },
+    beforeSize: { value: initialBefore.size }, afterSize: { value: initialAfter.size }, origin: { value: new THREE.Vector3() }, radius: { value: 300 },
   };
   const material = new THREE.ShaderMaterial({ uniforms, vertexShader, fragmentShader, side: THREE.FrontSide });
   const parts = new Map<string, THREE.BufferGeometry>();
-  const heatReference = new WeakMap<THREE.BufferGeometry, Float32Array>();
   let disposed = false, ready = false, failed = false, raf = 0;
-  let previousSpots: number[] = [], finishedSpots: number[] = [];
+  let currentMap: number[][] | null = null, mapUpdates = 0;
   let scanStart = -Infinity, lastTime = performance.now();
   let drag: { id: number; x: number; y: number } | null = null;
   let keyboardHold = false;
@@ -175,14 +187,6 @@ export function createBrainScene(canvas: HTMLCanvasElement, overlay: SVGGElement
   canvas.addEventListener("webglcontextlost", contextLost);
   reduced.addEventListener("change", invalidate);
 
-  function applyHeat(geometry: THREE.BufferGeometry) {
-    const data = heatAttributes(heatReference.get(geometry) ?? geometry.getAttribute("position").array, previousSpots, finishedSpots);
-    for (const key of ["heat", "before", "after", "head"] as const) {
-      const attribute = geometry.getAttribute(key) as THREE.BufferAttribute | undefined;
-      if (attribute) { (attribute.array as Float32Array).set(data[key]); attribute.needsUpdate = true; }
-      else geometry.setAttribute(key, new THREE.BufferAttribute(data[key], key === "head" ? 3 : 1));
-    }
-  }
   fetch(CORTEX_URL, { signal: abort.signal })
     .then((response) => { if (!response.ok) throw new Error("Cortex model unavailable"); return response.arrayBuffer(); })
     .then((buffer) => {
@@ -195,10 +199,11 @@ export function createBrainScene(canvas: HTMLCanvasElement, overlay: SVGGElement
         geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
         geometry.setAttribute("normal", new THREE.BufferAttribute(surfaceNormals(positions, faces), 3));
         geometry.setAttribute("sulc", new THREE.BufferAttribute(cavity, 1));
-        heatReference.set(geometry, positions);
+        const projected = mapVertexAttributes(positions);
+        geometry.setAttribute("mapUV", new THREE.BufferAttribute(projected.uv, 2));
+        geometry.setAttribute("head", new THREE.BufferAttribute(projected.head, 3));
         geometry.computeBoundingSphere();
         parts.set(side, geometry);
-        applyHeat(geometry);
         group.add(new THREE.Mesh(geometry, material));
       }
       ready = true; resize(); renderer.compile(scene, camera); renderer.render(scene, camera);
@@ -209,11 +214,20 @@ export function createBrainScene(canvas: HTMLCanvasElement, overlay: SVGGElement
     .catch(() => { if (!disposed) fail(); });
 
   return {
-    setScan(scan: ScanUpdate | null, spots: number[]) {
-      if (spots.join(",") === finishedSpots.join(",")) return;
-      previousSpots = scan ? finishedSpots : [];
-      finishedSpots = scan ? spots : [];
-      for (const geometry of parts.values()) applyHeat(geometry);
+    setScan(scan: ScanUpdate | null) {
+      const nextMap = scan?.map ?? null;
+      if (nextMap === currentMap) return;
+      // Map changes include live previews and clear/rejected results even when
+      // the finished spot list is unchanged. Never substitute scripted heat.
+      const next = textureFor(nextMap);
+      uniforms.beforeMap.value.dispose();
+      uniforms.beforeMap.value = uniforms.afterMap.value;
+      uniforms.beforeSize.value = uniforms.afterSize.value;
+      uniforms.afterMap.value = next.texture;
+      uniforms.afterSize.value = next.size;
+      currentMap = nextMap;
+      canvas.dataset.mapUpdates = String(++mapUpdates);
+      canvas.dataset.heatSource = "axial-map";
       uniforms.origin.value.fromArray(scalpSpot3D(scan?.spot ?? 0));
       scanStart = scan ? performance.now() : -Infinity;
       invalidate();
@@ -234,7 +248,7 @@ export function createBrainScene(canvas: HTMLCanvasElement, overlay: SVGGElement
       canvas.removeEventListener("blur", releaseKey);
       canvas.removeEventListener("webglcontextlost", contextLost);
       parts.forEach((geometry) => geometry.dispose());
-      ramp.dispose();
+      ramp.dispose(); uniforms.beforeMap.value.dispose(); uniforms.afterMap.value.dispose();
       const loseContext = context.getExtension("WEBGL_lose_context");
       material.dispose(); renderer.dispose();
       // Strict Mode reuses this canvas for its second setup. Only release the
