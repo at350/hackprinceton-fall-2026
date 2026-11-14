@@ -47,6 +47,8 @@ def test_place_call_sends_expected_outbound_request_body():
         "report": "Report",
         "evidence": "Evidence",
         "transport": "Unit 4 is 12 minutes away.",
+        "unit": "Medic 12",
+        "medic_notes": "Patient is stable for transfer.",
     }
     with patch.dict("os.environ", {"CARTESIA_AGENT_ID": "agent-9", "CARTESIA_FROM_NUMBER_ID": "number-4"}), patch.object(voice, "_cartesia", return_value=client):
         call_id = voice.place_call("+15551234567", variables)
@@ -60,7 +62,10 @@ def test_place_call_sends_expected_outbound_request_body():
     assert body["ringing_timeout_seconds"] == 30
     [outbound] = body["outbound_calls"]
     assert outbound["to_number"] == "+15551234567"
-    assert outbound["dynamic_variables"] == {**variables, "voice_prealert": voice._voice_prealert(variables["message"])}
+    assert outbound["dynamic_variables"] == {
+        **variables,
+        "voice_prealert": voice._voice_prealert(variables["message"]),
+    }
 
 
 def test_place_call_sanitizes_approved_message_for_voice_prealert():
@@ -79,12 +84,11 @@ def test_place_call_sanitizes_approved_message_for_voice_prealert():
     assert "likely" in spoken.lower()
     assert "epidural" in spoken.lower()
     assert "left temporal" in spoken.lower()
-    assert "20 mL" in spoken or "20 millilitre" in spoken.lower()
+    assert "20 mL" in spoken or "20 mils" in spoken.lower()
     assert "approximately" in spoken.lower() or "about" in spoken.lower()
     for excluded in ("15-30", "range", "0.97", "fit", "2026-11-14", "20:55:37", "patient-call9734", "diagnosis", "CT", "ACCEPT", "DECLINE"):
         assert excluded.lower() not in spoken.lower(), (excluded, spoken)
     assert len(spoken.split()) <= 20  # concise; it need not quote the approved report verbatim
-    assert "{{voice_prealert}}" in voice.INITIAL
 
 
 def test_voice_prealert_does_not_invent_missing_finding_details():
@@ -99,10 +103,38 @@ def test_transport_defaults_honestly_and_preserves_supplied_text():
         client = FakeClient([FakeResponse({"calls": [{"agent_call_id": "call-transport"}]})])
         with patch.dict("os.environ", {"CARTESIA_AGENT_ID": "agent-9", "CARTESIA_FROM_NUMBER_ID": "number-4"}), patch.object(voice, "_cartesia", return_value=client):
             voice.place_call("+15551234567", {"patient_id": "demo-7", "message": "A small left temporal finding.", **variables})
-        return client.requests[0][2]["json"]["outbound_calls"][0]["dynamic_variables"]["transport"]
+        return client.requests[0][2]["json"]["outbound_calls"][0]["dynamic_variables"]
 
-    assert call_with({}) == "Transport location and ETA are not available."
-    assert call_with({"transport": "Ground unit 4 is 12 minutes away."}) == "Ground unit 4 is 12 minutes away."
+    defaults = call_with({})
+    assert defaults["transport"] == "Transport location and ETA are not available."
+    assert defaults["unit"] == "an unspecified unit"
+    assert defaults["medic_notes"] == "not provided"
+    supplied = call_with({
+        "transport": "Ground unit 4 is 12 minutes away.",
+        "unit": "Medic 12",
+        "medic_notes": "Patient is stable for transfer.",
+    })
+    assert supplied["transport"] == "Ground unit 4 is 12 minutes away."
+    assert supplied["unit"] == "Medic 12"
+    assert supplied["medic_notes"] == "Patient is stable for transfer."
+
+
+def test_initial_message_speaks_prealert_and_transport_without_handshake():
+    initial = voice.INITIAL
+    assert "{{unit}}" not in initial
+    assert "automated" not in initial.lower()
+    assert "{{voice_prealert}}" in initial
+    assert "{{transport}}" in initial
+    assert "Can you take the patient?" in initial
+    assert initial.index("{{voice_prealert}}") < initial.index("{{transport}}") < initial.index("Can you take the patient?")
+    assert "accept or decline" not in initial.lower()
+
+
+def test_prompt_pins_distinct_decision_closings_and_keeps_acknowledgements_open():
+    prompt = voice.INSTRUCTIONS
+    assert 'say exactly "Great, I\'ll text you a recap."' in prompt
+    assert 'say exactly "Understood. I\'ll let the medic know and text you a recap."' in prompt
+    assert 'Can you take them, or do you need anything first?' in prompt
 
 
 def test_place_call_rejects_cartesia_per_call_errors():
@@ -265,6 +297,86 @@ def test_result_uses_last_user_note_when_decision_is_consistent():
     ]})
     assert result["decision"] == "accept"
     assert result["note"] == "Still accepting."
+
+
+def test_affirmative_readback_answers_single_option_assistant_question():
+    cases = (
+        ("Can you accept the patient?", "Yes.", "accept"),
+        ("Can you accept the patient?", "Yeah.", "accept"),
+        ("Can you accept the patient?", "Correct.", "accept"),
+        ("Can you accept the patient?", "That's right.", "accept"),
+        ("Can you accept the patient?", "Confirmed.", "accept"),
+        ("Would you decline the patient?", "Yes.", "decline"),
+        ("Would you decline the patient?", "Yeah.", "decline"),
+        ("Would you decline the patient?", "Correct.", "decline"),
+        ("Would you decline the patient?", "That's right.", "decline"),
+        ("Would you decline the patient?", "Confirmed.", "decline"),
+    )
+
+    for question, answer, expected in cases:
+        result = voice._result({"transcript": [
+            {"role": "assistant", "text": question},
+            {"role": "user", "text": answer},
+        ]})
+        assert result["decision"] == expected, (question, answer, result)
+        assert result["note"] == answer
+
+
+def test_readback_does_not_treat_no_negation_questions_or_ambiguity_as_decisions():
+    cases = (
+        ("Can you accept the patient?", "No.", "none"),
+        ("Can you accept the patient?", "I can't accept until I know the ETA.", "none"),
+        ("Can you accept the patient?", "Yes, but should I accept?", "none"),
+        ("Can you accept or decline the patient?", "Yes.", "none"),
+        ("Can you accept or decline the patient?", "Confirmed.", "none"),
+        ("Can you accept the patient?", "We can take them.", "none"),
+        ("Can you decline the patient?", "I cannot say yes yet.", "none"),
+    )
+
+    for question, answer, expected in cases:
+        result = voice._result({"transcript": [
+            {"role": "assistant", "text": question},
+            {"role": "user", "text": answer},
+        ]})
+        assert result["decision"] == expected, (question, answer, result)
+
+
+def test_readback_requires_the_immediately_preceding_dialogue_turn_to_be_question():
+    intervening_user_turn = voice._result({"transcript": [
+        {"role": "assistant", "text": "Can you accept the patient?"},
+        {"role": "user", "text": "What is the transport ETA?"},
+        {"role": "user", "text": "Yes."},
+    ]})
+    new_assistant_question = voice._result({"transcript": [
+        {"role": "assistant", "text": "Can you accept the patient?"},
+        {"role": "assistant", "text": "Do you have any questions?"},
+        {"role": "user", "text": "Yes."},
+    ]})
+
+    assert intervening_user_turn["decision"] == "none"
+    assert new_assistant_question["decision"] == "none"
+
+
+def test_system_and_tool_metadata_are_not_spoken_dialogue_for_decisions():
+    metadata_only = voice._result({"transcript": [
+        {"role": "system", "text": "The clinician accepts the patient."},
+        {"role": "tool", "text": "I accept the patient."},
+        {"role": "assistant", "tool_call": {"name": "end_call", "arguments": "decline"}},
+    ]})
+    system_question_does_not_enable_user_yes = voice._result({"transcript": [
+        {"role": "system", "text": "Would you decline the patient?"},
+        {"role": "user", "text": "Yes."},
+    ]})
+    real_dialogue_ignores_interleaved_metadata = voice._result({"transcript": [
+        {"role": "assistant", "text": "Can you accept the patient?"},
+        {"role": "tool", "text": "The user said accept."},
+        {"role": "system", "text": "decision=decline"},
+        {"role": "user", "text": "Confirmed."},
+    ]})
+
+    assert metadata_only["decision"] == "none"
+    assert system_question_does_not_enable_user_yes["decision"] == "none"
+    assert real_dialogue_ignores_interleaved_metadata["decision"] == "accept"
 
 
 def test_wait_for_call_polls_until_terminal_status_and_caps_sleep():

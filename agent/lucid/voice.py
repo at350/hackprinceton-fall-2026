@@ -19,23 +19,32 @@ ENV = ROOT / '.env'
 load_dotenv(ENV)
 CARTESIA = 'https://api.cartesia.ai'
 PHOTON = 'https://api.photon.codes'
-INSTRUCTIONS = '''You are Lucid, an automated screening aid calling an on-call clinician about a pre-alert approved by a medic. The initial message gives the finding and the supplied transport details, then asks whether they accept or decline the patient. Speak like a person on a radio. Keep answers to one short sentence, use no filler or thanks, and do not repeat the opening.
+INSTRUCTIONS = '''You are Lucid, an automated screening aid calling the on-call clinician with a medic-approved pre-alert. Speak like a calm, competent medic talking to another clinician. The initial message already introduces you, delivers the headline and transport, and asks whether they can take the patient. Do not repeat it. If the line is silent after the opening, use one light human check-in, such as "Are you there?" or "Can you take them?"; do this only once. If asked who or what you are, answer truthfully in one short sentence: you are Lucid, the scan assistant the medic is using. Never claim to be a person.
 
-When interrupted, stop speaking, listen and respond to what was asked. Questions, objections, "wait", and "no" followed by a question are NOT refusals to talk: answer them, even if the clinician says no or is hostile. When in doubt, answer the question. For location and ETA, give the transport details below. If asked where the patient is, provide the available unit and ETA; if no precise location is given, say the exact location is unavailable. For a known fact, answer directly in one sentence and stop speaking; do not ask accept-or-decline again in that response. For ETA, just state the transport and ETA without any question. If a requested fact is not provided, such as the destination bay, patient name, vitals or mechanism of injury, say: "I don't have that. The medic will radio it. Can you accept pending that, or do you decline?" Never invent a fact or claim it is in a message if it is not. If the caller is hostile, stay level and offer an accept-or-decline choice or the option to decide by text; do not hang up unless the person refuses to talk or hangs up.
+Listen first. One thought per turn. Use contractions, spoken numbers, and occasional brief acknowledgements like "Sure" or "Yep, one sec" where natural, with no padding. Answer the specific question directly from the information below and stop. Do not tack on an acceptance question after a single factual answer; ask it again naturally only after a pause or two or three answers, varying the wording. Give fit, range, measurement method, contact quality, and competing findings only when asked. If interrupted, stop, listen and answer the question. If the person pushes back or is short, stay calm and natural, for example "Fair enough. What do you need to know?" If a fact is missing, say plainly and naturally that you do not have it and the medic can radio it over; never claim details are in their messages unless they are.
 
-Only when the person actually refuses to talk at all, says they cannot talk, not now, stop calling, or says this is the wrong person or number: stop, do not read or repeat clinical details, say exactly "Understood. The details are in your messages; reply ACCEPT or DECLINE there.", and end the call. A refusal to talk is not a patient decline; the end-call reason must say "no decision given".
+An acknowledgement such as "go ahead", "okay" or "right" by itself is not a patient decision or a read-back confirmation; offer only one short follow-up, for example "Can you take them, or do you need anything first?", then listen. Do not repeat the pre-alert or volunteer the medic notes, vital signs, age or mechanism after an acknowledgement; those details are for direct questions. A patient decision may be expressed in ordinary words, such as "bring them in", "we can take them", "we're full" or "divert". When you hear an apparent decision, do not end yet. Read it back as a closed confirmation question containing exactly one decision word: for acceptance, "Just to confirm, you're accepting the patient?"; for decline, "So that's a decline?" The read-back question is an ordinary spoken turn, never a tool call or pre-tool speech. STOP and wait for their next turn. Do not invoke end_call when asking the read-back, or because they said "bring them in" or "divert"; those are not a confirmation. Only a clear affirmative in a later separate user turn, such as "yes", "yeah", "correct", "that's right" or "confirmed", confirms it. If they say no or ask a question, that is not confirmation; listen and clarify. Once they affirm the read-back, immediately invoke end_call. For an accepted patient, say exactly "Great, I'll text you a recap." before ending. For a declined patient, say exactly "Understood. I'll let the medic know and text you a recap." before ending.
 
-Only an explicit acceptance or decline of the patient is a decision. Answer only from the approved report, evidence and transport below. Never claim a diagnosis: describe what the screening scan suggests. Do not say "not a diagnosis", "confirm with CT", or a similar disclaimer unless asked whether it is a diagnosis. Never give treatment advice. When the clinician explicitly accepts or declines the patient, immediately invoke the end_call tool and say exactly "Text recap follows." as the tool's pre-action speech. Do not ask whether they are still there or repeat clinical details; invoking end_call is mandatory.
-Patient ID, only if asked: {{patient_id}}
+A question, objection, "wait", or a "no" followed by a question is not a refusal to talk. Only if they actually refuse to speak, cannot talk, say not now or stop calling, or say wrong person or number: stop, disclose no further clinical information, say exactly "Understood. The details are in your messages; reply ACCEPT or DECLINE there.", and end the call. This is no decision given, not a patient decline. Do not hang up merely because someone is hostile.
+
+Never invent facts, never claim a diagnosis, and never give treatment advice. Repeat ages and other numbers as given, preserving qualifiers such as "about"; do not turn an approximate value into an exact one. Describe what the screening scan suggests. Do not say "not a diagnosis", "confirm with CT", or similar disclaimers unless directly asked whether it is a diagnosis. If a detail is absent, say you do not have it. Use only these approved facts:
+Headline: {{voice_prealert}}
+Transport and ETA: {{transport}}
+Medic unit: {{unit}}
+Medic notes: {{medic_notes}}
 Approved pre-alert: {{message}}
 Approved report: {{report}}
 Evidence: {{evidence}}
-Transport: {{transport}}'''
-INITIAL = 'This is Lucid, an automated screening aid, with a pre-alert a medic approved. {{voice_prealert}} {{transport}} Do you accept or decline the patient?'
+Patient ID, only when asked: {{patient_id}}'''
+INITIAL = "Hi, this is Lucid. I've got a head-injury pre-alert: {{voice_prealert}} {{transport}} Can you take the patient?"
+VOICE_ID = 'aa2cafe9-97ba-4052-ac3c-875000f95212'  # Zander, measured and calm.
+MODEL_ID = 'gpt-5.4'  # Better read-back turn-taking in the managed-model preview.
 AGENT_CONFIG = {'instructions': INSTRUCTIONS, 'initial_message': INITIAL,
                 'initial_message_interruptions': 'allow',
-                'audio': {'output': {'speed': 1.30}},
-                'system_tools': {'end_call': {'pre_tool_speech': 'force', 'description': 'Immediately end after the clinician makes an explicit patient decision or refuses to talk. For a decision, say Text recap follows. For refusal, say the exact refusal sentence from the instructions. The tool must be invoked, not just described.'}}}
+                'audio': {'output': {'voice_id': VOICE_ID, 'speed': 1.1}},
+                'turn': {'inactivity_check_in_secs': 5, 'inactivity_end_call_secs': 60},
+                'model': {'id': MODEL_ID}, 'speculative_generation': True,
+                'system_tools': {'end_call': {'pre_tool_speech': 'force', 'description': 'Never call this tool while asking a read-back question. For a patient decision, call it only after the clinician has separately answered yes to your prior read-back. Otherwise use it only for a genuine refusal to talk. Say the required closing or refusal line before ending.'}}}
 
 
 def enabled() -> bool:
@@ -72,7 +81,7 @@ def _voice_prealert(message):
         article = "an" if description[0] in "aeiou" else "a"
         finding = f"The scan suggests {article} {description}"
         if size:
-            finding += f", about {size.group(1)} millilitres"
+            finding += f", about {size.group(1)} mils"
         return finding + "."
     # For unusual reports preserve only a short finding, never IDs, times or scoring fields.
     text = re.sub(r"(?i)\bscreening aid\s*[,;:-]?\s*not a diagnosis\.?", "", message)
@@ -86,7 +95,9 @@ def _voice_prealert(message):
 
 def place_call(to_number, variables):
     variables = {**variables, 'voice_prealert': _voice_prealert(variables.get('message')),
-                 'transport': str(variables.get('transport') or 'Transport location and ETA are not available.')}
+                 'transport': str(variables.get('transport') or 'Transport location and ETA are not available.'),
+                 'unit': str(variables.get('unit') or 'an unspecified unit'),
+                 'medic_notes': str(variables.get('medic_notes') or 'not provided')}
     with _cartesia() as client:
         result = _request(client, 'POST', '/agents/calls', json={
             'agent_id': os.environ['CARTESIA_AGENT_ID'],
@@ -104,11 +115,25 @@ def _result(call):
     transcript = call.get('transcript') or []
     # Only the clinician's own words count. Ambiguous or conflicting words stay undecided.
     matches = []
+    preceding = None
     for turn in transcript:
-        if turn.get('role') != 'user':
+        role, text = turn.get('role'), turn.get('text') or ''
+        if role not in ('user', 'assistant') or not text.strip():
             continue
-        text = turn.get('text') or ''
-        # Keep a later explicit decision even if the same turn began with a question or conditional.
+        if role == 'assistant':
+            preceding = ('assistant', text)
+            continue
+        # Only a clear affirmative to the immediately preceding spoken read-back counts.
+        if preceding and preceding[0] == 'assistant':
+            question = preceding[1]
+            options = {'accept' if m.group().lower().startswith('accept') else 'decline'
+                       for m in re.finditer(r"\b(accept(?:ed|ing)?|declin(?:e|ed|ing))\b", question, re.I)}
+            affirmative = re.match(r"^\s*(?:yes|yeah|yep|correct|that's right|that is right|confirmed|affirmative)\b", text, re.I)
+            negative = re.search(r"\b(?:no|not|never|don'?t|doesn'?t|can'?t|cannot|won'?t|unable)\b", text, re.I)
+            question_words = re.search(r"\b(?:where|when|why|how|what|who|which)\b", text, re.I)
+            if '?' in question and len(options) == 1 and affirmative and not negative and not question_words and '?' not in text:
+                matches.append((next(iter(options)), text))
+        # An explicit user decision still counts; questions and hypotheticals do not.
         for clause in re.split(r"(?<=[.!?])\s+|,\s*(?:but|however)\s+", text, flags=re.I):
             words = list(re.finditer(r'\b(accept(?:ed|ing)?|declin(?:e|ed|ing))\b', clause, re.I))
             if '?' in clause or re.search(r"\b(?:before|if|whether|until)\b", clause, re.I):
@@ -122,6 +147,7 @@ def _result(call):
                 valid.append(('accept' if m.group().lower().startswith('accept') else 'decline', text))
             if len({d for d, _ in valid}) == 1:
                 matches.extend(valid)
+        preceding = ('user', text)
     decisions = {m[0] for m in matches}
     decision = next(iter(decisions)) if len(decisions) == 1 else 'none'
     note = next((text for d, text in reversed(matches) if d == decision), '')
@@ -167,26 +193,22 @@ def _save_once(key, value):
 def _ensure_agent(c):
     agent_id = os.getenv('CARTESIA_AGENT_ID')
     if not agent_id:
-        models = []
-        page = None
-        while True:
-            result = _request(c, 'GET', '/v1/agents/models', params={'starting_after': page} if page else {})
-            models += result['data']
-            if not result.get('has_more') or not result.get('next_page'):
-                break
-            page = result['next_page']
-        model = min((x for x in models if x.get('average_latency_ms') is not None), key=lambda x: x['average_latency_ms'])['id']
-        agent = _request(c, 'POST', '/v1/agents', json={'name': 'Lucid pre-alert', 'config': {**AGENT_CONFIG, 'model': {'id': model}, 'speculative_generation': True}})
+        agent = _request(c, 'POST', '/v1/agents', json={'name': 'Lucid pre-alert', 'config': AGENT_CONFIG})
         agent_id = agent['id']
         _save_once('CARTESIA_AGENT_ID', agent_id)
-        print('Cartesia model:', model)
+        print('Cartesia model:', MODEL_ID)
     else:
         agent = _request(c, 'GET', '/v1/agents/' + agent_id)
         config = agent.get('config') or {}
         end_call = (config.get('system_tools') or {}).get('end_call') or {}
         if (config.get('instructions') != INSTRUCTIONS or config.get('initial_message') != INITIAL
                 or config.get('initial_message_interruptions') != 'allow' or end_call != AGENT_CONFIG['system_tools']['end_call']
-                or ((config.get('audio') or {}).get('output') or {}).get('speed') != 1.30):
+                or ((config.get('audio') or {}).get('output') or {}).get('speed') != AGENT_CONFIG['audio']['output']['speed']
+                or ((config.get('audio') or {}).get('output') or {}).get('voice_id') != VOICE_ID
+                or (config.get('model') or {}).get('id') != MODEL_ID
+                or (config.get('turn') or {}).get('inactivity_check_in_secs') != 5
+                or (config.get('turn') or {}).get('inactivity_end_call_secs') != 60
+                or config.get('speculative_generation') is not True):
             _request(c, 'PATCH', '/v1/agents/' + agent_id, json={'config': AGENT_CONFIG})
     print('Cartesia agent:', agent_id)
     return agent_id
