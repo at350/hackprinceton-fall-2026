@@ -277,6 +277,98 @@ def test_result_reports_no_answer_for_empty_transcript():
     assert result["summary"].startswith("No decision was given on the call.")
 
 
+def test_cartesia_voicemail_end_reason_is_decisive_even_without_transcript():
+    result = voice._result({"end_reason": "voicemail_detected", "transcript": []})
+
+    assert result["answered"] is False
+    assert result["answered_at"] is None
+    assert result["decision"] == "none"
+
+
+def test_carrier_voicemail_phrase_with_separate_goodbye_is_not_a_clinician_answer():
+    result = voice._result({"transcript": [
+        {"role": "user", "text": "The person you are trying to reach is not available. Please leave a message after the tone."},
+        {"role": "user", "text": "Goodbye."},
+    ], "start_time": "2026-11-14T20:55:37Z"})
+
+    assert result["answered"] is False
+    assert result["answered_at"] is None
+    assert result["decision"] == "none"
+
+
+def test_each_listed_carrier_phrase_is_recognized_as_voicemail():
+    phrases = (
+        "This is my voicemail.",
+        "Your mailbox is full.",
+        "This mailbox has not been set up.",
+        "The person is not available.",
+        "Please leave a message.",
+        "Speak after the tone.",
+        "Please try your call again later.",
+        "The person you are trying to reach is busy.",
+        "Your call cannot be completed as dialed.",
+    )
+
+    for phrase in phrases:
+        result = voice._result({"transcript": [{"role": "user", "text": phrase}]})
+        assert result["answered"] is False, (phrase, result)
+        assert result["answered_at"] is None, (phrase, result)
+
+
+def test_standalone_goodbye_and_assistant_only_behavior_remain_unchanged():
+    goodbye = voice._result({"transcript": [{"role": "user", "text": "Goodbye."}], "start_time": "2026-11-14T20:55:37Z"})
+    assistant_only = voice._result({"transcript": [{"role": "assistant", "text": "Goodbye."}], "start_time": "2026-11-14T20:55:37Z"})
+    no_transcript = voice._result({"transcript": [], "start_time": "2026-11-14T20:55:37Z"})
+
+    assert goodbye["answered"] is True
+    assert goodbye["answered_at"] == "2026-11-14T20:55:37Z"
+    assert assistant_only["answered"] is True
+    assert assistant_only["answered_at"] == "2026-11-14T20:55:37Z"
+    assert no_transcript["answered"] is False
+    assert no_transcript["answered_at"] is None
+
+
+def test_real_clinician_turn_mixed_with_voicemail_words_remains_answered():
+    start_time = "2026-11-14T20:55:37Z"
+    result = voice._result({"transcript": [
+        {"role": "user", "text": "I heard the voicemail say leave a message after the tone."},
+        {"role": "user", "text": "I accept the patient."},
+    ], "start_time": start_time})
+
+    assert result["answered"] is True
+    assert result["answered_at"] == start_time
+    assert result["decision"] == "accept"
+
+
+def test_voicemail_prompt_requires_silence_and_disables_spoken_tool_message():
+    instructions = voice.INSTRUCTIONS.lower()
+    voicemail_start = instructions.index("if you hear a voicemail greeting")
+    voicemail_instruction = instructions[voicemail_start:instructions.index("\n\n", voicemail_start)]
+    config = voice.AGENT_CONFIG["system_tools"]["voicemail_detection"]
+
+    assert "stop speaking immediately" in voicemail_instruction
+    assert "without saying anything further" in voicemail_instruction
+    assert "never leave a message" in voicemail_instruction
+    assert config["pre_tool_speech"] == "off"
+    assert config["message"] is None
+
+
+def test_wait_for_call_returns_voicemail_without_answer_timestamp():
+    client = FakeClient([FakeResponse({
+        "status": "completed",
+        "end_reason": "voicemail_detected",
+        "transcript": [],
+        "start_time": "2026-11-14T20:55:37Z",
+    })])
+    with patch.object(voice, "_cartesia", return_value=client), patch.object(voice.time, "monotonic", return_value=10):
+        result = voice.wait_for_call("call-voicemail", timeout_s=5)
+
+    assert [request[:2] for request in client.requests] == [("GET", "/agents/calls/call-voicemail")]
+    assert result["answered"] is False
+    assert result["answered_at"] is None
+    assert result["decision"] == "none"
+
+
 def test_result_preserves_raw_api_answer_and_end_timestamps():
     answered_at = "2026-11-14T20:55:37.123Z"
     ended_at = "2026-11-14T21:03:05.987+00:00"

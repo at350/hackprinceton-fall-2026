@@ -25,6 +25,8 @@ Listen first. One thought per turn. Use contractions, spoken numbers, and occasi
 
 An acknowledgement such as "go ahead", "okay" or "right" by itself is not a patient decision or a read-back confirmation; offer only one short follow-up, for example "Can you take them, or do you need anything first?", then listen. Do not repeat the pre-alert or volunteer the medic notes, vital signs, age or mechanism after an acknowledgement; those details are for direct questions. A patient decision may be expressed in ordinary words, such as "bring them in", "we can take them", "we're full" or "divert". When you hear an apparent decision, do not end yet. Read it back as a closed confirmation question containing exactly one decision word: for acceptance, "Just to confirm, you're accepting the patient?"; for decline, "So that's a decline?" The read-back question is an ordinary spoken turn, never a tool call or pre-tool speech. STOP and wait for their next turn. Do not invoke end_call when asking the read-back, or because they said "bring them in" or "divert"; those are not a confirmation. Only a clear affirmative in a later separate user turn, such as "yes", "yeah", "correct", "that's right" or "confirmed", confirms it. If they say no or ask a question, that is not confirmation; listen and clarify. Once they affirm the read-back, immediately invoke end_call. For an accepted patient, say exactly "Great, I'll text you a recap." before ending. For a declined patient, say exactly "Understood. I'll let the medic know and text you a recap." before ending.
 
+If you hear a voicemail greeting or carrier announcement, stop speaking immediately and invoke voicemail_detection without saying anything further. Never leave a message or disclose clinical details to a recording.
+
 A question, objection, "wait", or a "no" followed by a question is not a refusal to talk. Only if they actually refuse to speak, cannot talk, say not now or stop calling, or say wrong person or number: stop, disclose no further clinical information, say exactly "Understood. The details are in your messages; reply ACCEPT or DECLINE there.", and end the call. This is no decision given, not a patient decline. Do not hang up merely because someone is hostile.
 
 Never invent facts, never claim a diagnosis, and never give treatment advice. Repeat ages and other numbers as given, preserving qualifiers such as "about"; do not turn an approximate value into an exact one. Describe what the screening scan suggests. Do not say "not a diagnosis", "confirm with CT", or similar disclaimers unless directly asked whether it is a diagnosis. If a detail is absent, say you do not have it. Use only these approved facts:
@@ -44,7 +46,8 @@ AGENT_CONFIG = {'instructions': INSTRUCTIONS, 'initial_message': INITIAL,
                 'audio': {'output': {'voice_id': VOICE_ID, 'speed': 1.1}},
                 'turn': {'inactivity_check_in_secs': 5, 'inactivity_end_call_secs': 60},
                 'model': {'id': MODEL_ID}, 'speculative_generation': True,
-                'system_tools': {'end_call': {'pre_tool_speech': 'force', 'description': 'Never call this tool while asking a read-back question. For a patient decision, call it only after the clinician has separately answered yes to your prior read-back. Otherwise use it only for a genuine refusal to talk. Say the required closing or refusal line before ending.'}}}
+                'system_tools': {'end_call': {'pre_tool_speech': 'force', 'description': 'Never call this tool while asking a read-back question. For a patient decision, call it only after the clinician has separately answered yes to your prior read-back. Otherwise use it only for a genuine refusal to talk. Say the required closing or refusal line before ending.'},
+                                 'voicemail_detection': {'description': 'Use immediately when you hear a voicemail greeting or carrier announcement. Do not speak or leave a message.', 'pre_tool_speech': 'off', 'message': None}}}
 
 
 def enabled() -> bool:
@@ -111,8 +114,29 @@ def place_call(to_number, variables):
     return calls[0]['agent_call_id']
 
 
+_MACHINE_PHRASES = re.compile(
+    r"\b(?:voicemail|voice mail|mailbox|mail box|has not been set up|is not available|"
+    r"leave a message|after the tone|try your call again|"
+    r"the person you are trying to reach|cannot be completed)\b", re.I)
+_MACHINE_SIGNOFF = re.compile(r"\s*(?:goodbye|good bye|bye)[.!\s]*\Z", re.I)
+
+
+def _machine_answered(call, transcript):
+    # Cartesia's tool can positively detect voicemail even with no transcript.
+    if call.get('end_reason') == 'voicemail_detected':
+        return True
+    turns = [str(t.get('text') or '').strip() for t in transcript
+             if t.get('role') == 'user' and str(t.get('text') or '').strip()]
+    # STT can split an announcement and its closing "Goodbye" into separate turns.
+    # Require at least one machine phrase and reject mixed, substantive human speech.
+    return bool(turns and any(_MACHINE_PHRASES.search(t) for t in turns)
+                and all(_MACHINE_PHRASES.search(t) or _MACHINE_SIGNOFF.fullmatch(t)
+                        for t in turns))
+
+
 def _result(call):
     transcript = call.get('transcript') or []
+    machine = _machine_answered(call, transcript)
     # Only the clinician's own words count. Ambiguous or conflicting words stay undecided.
     matches = []
     preceding = None
@@ -149,7 +173,7 @@ def _result(call):
                 matches.extend(valid)
         preceding = ('user', text)
     decisions = {m[0] for m in matches}
-    decision = next(iter(decisions)) if len(decisions) == 1 else 'none'
+    decision = next(iter(decisions)) if len(decisions) == 1 and not machine else 'none'
     note = next((text for d, text in reversed(matches) if d == decision), '')
     duration = None
     if call.get('start_time') and call.get('end_time'):
@@ -159,7 +183,8 @@ def _result(call):
             pass
     # Cartesia may conflate refusing the call with declining the patient.
     summary = 'No decision was given on the call.' if decision == 'none' else (call.get('summary') or '')
-    return {'answered': bool(transcript), 'answered_at': call.get('start_time') if transcript else None, 'ended_at': call.get('end_time'), 'duration_s': duration, 'decision': decision, 'note': note,
+    answered = bool(transcript) and not machine
+    return {'answered': answered, 'answered_at': call.get('start_time') if answered else None, 'ended_at': call.get('end_time'), 'duration_s': duration, 'decision': decision, 'note': note,
             'summary': summary, 'transcript': transcript}
 
 
@@ -201,8 +226,10 @@ def _ensure_agent(c):
         agent = _request(c, 'GET', '/v1/agents/' + agent_id)
         config = agent.get('config') or {}
         end_call = (config.get('system_tools') or {}).get('end_call') or {}
+        voicemail_detection = (config.get('system_tools') or {}).get('voicemail_detection')
         if (config.get('instructions') != INSTRUCTIONS or config.get('initial_message') != INITIAL
                 or config.get('initial_message_interruptions') != 'allow' or end_call != AGENT_CONFIG['system_tools']['end_call']
+                or voicemail_detection != AGENT_CONFIG['system_tools']['voicemail_detection']
                 or ((config.get('audio') or {}).get('output') or {}).get('speed') != AGENT_CONFIG['audio']['output']['speed']
                 or ((config.get('audio') or {}).get('output') or {}).get('voice_id') != VOICE_ID
                 or (config.get('model') or {}).get('id') != MODEL_ID
