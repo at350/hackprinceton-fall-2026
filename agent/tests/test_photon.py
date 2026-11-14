@@ -442,6 +442,52 @@ def test_map_png():
     assert img.format == "PNG" and img.size == (1080, 1350), img.size
 
 
+def heat_columns(png: bytes) -> np.ndarray:
+    """x of the pixels the heat tints red, against the same image of a map with no signal, in the brain band."""
+    def redness(data):
+        rgb = np.asarray(Image.open(io.BytesIO(data)).convert("RGB"), int)[300:1220]
+        return rgb[..., 0] - rgb[..., 2]
+    return np.nonzero(redness(png) - redness(physics.map_png(np.full((64, 64), 0.06))) > 20)[1]
+
+
+def test_map_png_left_right():
+    # Patient's left on screen left, as on the dashboard: map column 0 is the patient's left.
+    for region, left in (("L temporal", True), ("R temporal", False), ("L frontal", True), ("R parietal", False)):
+        xs = heat_columns(physics.map_png(physics.hypothesis_map("epidural", region, 30, 64), {"status": "bleed", "region": region}))
+        assert len(xs) > 200, (region, len(xs))
+        assert (np.median(xs) < 540) == left, (region, np.median(xs))
+    grid = np.full((64, 64), 0.06)
+    grid[:, :24] = 0.95  # a plain left-sided map, independent of the bleed shapes
+    xs = heat_columns(physics.map_png(grid))
+    assert len(xs) > 200 and (xs < 540).mean() > 0.98, (len(xs), (xs < 540).mean())
+
+
+def test_map_png_without_cortex_cache():
+    from lucid.physics import render
+
+    render._cortex.cache_clear()
+    with patched(render, CORTEX=Path("/nonexistent/cortex_top.npz")):
+        png = physics.map_png(physics.hypothesis_map("epidural", "L temporal", 30, 64), {"status": "bleed", "region": "L temporal"})
+        assert render._cortex() is None
+    render._cortex.cache_clear()
+    img = Image.open(io.BytesIO(png))
+    assert img.size == (1080, 1350), img.size
+    xs = heat_columns(png)
+    assert len(xs) > 200 and np.median(xs) < 540, (len(xs), np.median(xs) if len(xs) else None)
+    assert render._cortex() is not None  # the real cache loads again
+
+
+def test_map_png_missing_fields():
+    grid = physics.hypothesis_map("subdural", "R frontal", 20, 32)
+    for result in (None, {}, {"status": "bleed"}, {"status": "clear", "confidence": 0.9}, {"status": "uncertain", "region": "R frontal"},
+                   {"status": "bleed", "region": None, "volume_ml": None, "confidence": None, "patient_id": None},
+                   {"status": "bleed", "volume_ml": "about twenty", "confidence": "high"}, {"status": "rejected", "patient_id": "P-1"}):
+        png = physics.map_png(grid, result)
+        assert Image.open(io.BytesIO(png)).size == (1080, 1350), result
+    for bad in ([], [[0.5, 0.5, 0.5]], [[float("nan")] * 4] * 4):  # odd grids still give an image
+        assert Image.open(io.BytesIO(physics.map_png(bad, {"status": "bleed"}))).size == (1080, 1350), bad
+
+
 if __name__ == "__main__":
     tests = [f for name, f in sorted(globals().items()) if name.startswith("test_")]
     for t in tests:
