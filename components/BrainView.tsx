@@ -40,7 +40,7 @@ function BrainCanvas({ scan }: { scan: ScanUpdate | null }) {
       const k = Math.min(1, (performance.now() - start) / FILL_MS);
       const e = 1 - Math.pow(1 - k, 3);
       ctx.clearRect(0, 0, size, size);
-      drawDimBrain(ctx, size, 0.22);
+      drawDimBrain(ctx, size, 0.14);
       if (old) ctx.drawImage(old, 0, 0, size, size);
       ctx.save();
       ctx.beginPath();
@@ -67,10 +67,10 @@ function BrainCanvas({ scan }: { scan: ScanUpdate | null }) {
         className="absolute rounded-full"
         style={{ ...box, background: "radial-gradient(closest-side, rgba(34,195,230,0.10), transparent 75%)" }}
       />
-      <canvas ref={ref} className="absolute" style={{ ...box, filter: "drop-shadow(0 0 22px rgba(34,195,230,0.16))" }} />
+      <canvas ref={ref} className="absolute" style={box} />
       {/* GenRevive: scan-like grid through the surface, clipped to the brain. */}
       <div
-        className="absolute opacity-[0.10] mix-blend-screen"
+        className="absolute opacity-[0.07]"
         style={{
           ...box,
           backgroundImage: "repeating-linear-gradient(to bottom, rgba(140,220,255,1) 0 1px, transparent 1px 7px)",
@@ -148,7 +148,7 @@ export function BrainView({ scan, spots, current, run }: { scan: ScanUpdate | nu
           </radialGradient>
         </defs>
         {sense && (
-          <circle cx={sense.x} cy={sense.y} r={0.34} fill="url(#sense)" style={{ mixBlendMode: "screen" }}>
+          <circle cx={sense.x} cy={sense.y} r={0.34} fill="url(#sense)">
             <animate attributeName="r" values="0.28;0.36;0.28" dur="2.4s" repeatCount="indefinite" />
           </circle>
         )}

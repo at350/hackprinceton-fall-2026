@@ -40,7 +40,7 @@ function StatusLine() {
   // Elapsed time restarts whenever the agent starts something new.
   const [since, setSince] = useState({ key: "", t });
   const key = busy ? label : "";
-  if (since.key !== key) setSince({ key, t });
+  if (since.key !== key || t < since.t) setSince({ key, t });
   const elapsed = t - since.t;
 
   return (
