@@ -1,18 +1,14 @@
 import * as THREE from "three";
 import { heatRGB } from "@/components/ui";
 import { decodeCortex, CORTEX_URL } from "./brain-model";
-import { mapTextureData, mapVertexAttributes, scalpSpot3D } from "./brain-heat";
+import { cortexProjectionGLSL, mapTextureData, mapVertexAttributes, scalpSpot3D } from "./brain-heat";
 import type { ScanUpdate } from "./types";
 import { scanRevealRadius, surfaceNormals } from "./brain-geometry";
 
 const VIEW = 1.25;
 const vertexShader = `
   attribute float sulc;
-  attribute vec2 mapUV;
-  attribute vec2 mapExtension;
   attribute vec3 head;
-  varying vec2 vMapUV;
-  varying vec2 vMapExtension;
   varying vec3 vHead;
   varying vec3 vNormal;
   varying vec3 vPosition;
@@ -20,7 +16,7 @@ const vertexShader = `
   void main() {
     vNormal = normalize(normalMatrix * normal);
     vPosition = position;
-    vSulc = sulc; vMapUV = mapUV; vHead = head; vMapExtension = mapExtension;
+    vSulc = sulc; vHead = head;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
@@ -35,22 +31,18 @@ const fragmentShader = `
   varying vec3 vNormal;
   varying vec3 vPosition;
   varying float vSulc;
-  varying vec2 vMapUV;
-  varying vec2 vMapExtension;
   varying vec3 vHead;
-  vec2 sampleMap(sampler2D field, float size) {
-    if (any(lessThan(vMapUV, vec2(0.0))) || any(greaterThan(vMapUV, vec2(1.0)))) return vec2(0.0);
-    // Align the map's sample coordinates with texel centres, as on the 2D grid.
-    vec4 sampleValue = texture2D(field, (vMapUV * (size - 1.0) + 0.5) / size);
-    // Below the equator, continue coverage from valid rim samples rather than
-    // averaging it with the grid's outside-head padding. Keep unscanned zeros.
-    float rimCoverage = sampleValue.a > 0.001 ? clamp(sampleValue.g / sampleValue.a, 0.0, 1.0) : 0.0;
-    return vec2(sampleValue.r, mix(sampleValue.g, rimCoverage, vMapExtension.x));
+  ${cortexProjectionGLSL}
+  vec2 sampleMap(sampler2D field, float size, vec2 uv) {
+    // Align to texel centres. Outside-head pixels are padding, not evidence:
+    // the same normalized filter on both sides prevents a dark equator ring.
+    vec4 sampleValue = texture2D(field, (uv * (size - 1.0) + 0.5) / size);
+    return sampleValue.a > 0.001 ? clamp(sampleValue.rg / sampleValue.a, 0.0, 1.0) : vec2(0.0);
   }
-  vec3 tissue(vec2 sampleValue, vec3 cortex) {
+  vec3 tissue(vec2 sampleValue, vec3 cortex, float heatOpacity) {
     float value = sampleValue.r;
     float coverage = sampleValue.g;
-    float alpha = smoothstep(0.2, 0.65, value) * 0.94 * vMapExtension.y;
+    float alpha = smoothstep(0.2, 0.65, value) * 0.94 * heatOpacity;
     vec3 heat = texture2D(heatRamp, vec2(clamp((value - 0.15) / 0.75, 0.0, 1.0), 0.5)).rgb;
     // Treat likelihood as a surface tint under the same illumination and cavity.
     return mix(cortex * mix(0.20, 1.0, coverage), heat * (cortex / vec3(0.58, 0.64, 0.68)), alpha);
@@ -69,7 +61,8 @@ const fragmentShader = `
     float flank = mix(0.45, 1.0, smoothstep(-0.15, 0.75, n.z));
     vec3 cortex = (vec3(0.58, 0.64, 0.68) * light * crown + vec3(sheen)) * ao * flank * (1.0 - medial * 0.9);
     float reveal = 1.0 - smoothstep(radius - 1.2, radius + 1.2, distance(vHead, origin));
-    gl_FragColor = vec4(mix(tissue(sampleMap(beforeMap, beforeSize), cortex), tissue(sampleMap(afterMap, afterSize), cortex), reveal), 1.0);
+    vec3 projection = projectCortexMap(vHead);
+    gl_FragColor = vec4(mix(tissue(sampleMap(beforeMap, beforeSize, projection.xy), cortex, projection.z), tissue(sampleMap(afterMap, afterSize, projection.xy), cortex, projection.z), reveal), 1.0);
   }
 `;
 
@@ -94,6 +87,7 @@ export function createBrainScene(canvas: HTMLCanvasElement, overlay: SVGGElement
     const packed = mapTextureData(map);
     const texture = new THREE.DataTexture(packed.data, packed.size, packed.size);
     texture.minFilter = texture.magFilter = THREE.LinearFilter;
+    texture.generateMipmaps = false;
     texture.needsUpdate = true;
     return { texture, size: packed.size };
   }
@@ -207,8 +201,6 @@ export function createBrainScene(canvas: HTMLCanvasElement, overlay: SVGGElement
         geometry.setAttribute("normal", new THREE.BufferAttribute(surfaceNormals(positions, faces), 3));
         geometry.setAttribute("sulc", new THREE.BufferAttribute(cavity, 1));
         const projected = mapVertexAttributes(positions);
-        geometry.setAttribute("mapUV", new THREE.BufferAttribute(projected.uv, 2));
-        geometry.setAttribute("mapExtension", new THREE.BufferAttribute(projected.extension, 2));
         geometry.setAttribute("head", new THREE.BufferAttribute(projected.head, 3));
         geometry.computeBoundingSphere();
         parts.set(side, geometry);
