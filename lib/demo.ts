@@ -75,8 +75,9 @@ const TODOS: AgentStep[] = [
   { id: "todo-approve", kind: "todo", label: "Ask medic to confirm", state: "pending" },
 ];
 
-function initialState(): DashState {
+function initialState(run = 0): DashState {
   return {
+    run,
     t: 0,
     playing: true,
     device: "disconnected",
@@ -175,7 +176,7 @@ export class DemoStore {
 
   restart() {
     this.generation++;
-    this.state = initialState();
+    this.state = initialState(this.state.run + 1);
     this.applied = 0;
     deviceBuffer.clear();
     this.emit();

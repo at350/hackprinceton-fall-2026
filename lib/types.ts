@@ -94,6 +94,7 @@ export interface ApprovalRequest {
 export type TabId = "scan" | "simulations";
 
 export interface DashState {
+  run: number; // increments on every restart
   t: number; // demo clock, ms
   playing: boolean;
   device: DeviceStatus;

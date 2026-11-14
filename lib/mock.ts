@@ -12,7 +12,8 @@ import type {
 // Axial view from above, nose up, patient's left on screen left.
 // Map coordinates: x, y in [-1, 1], y = -1 is the nose.
 
-export const HEAD = { rx: 0.78, ry: 0.92 };
+// Matches the brain render's silhouette (width/height 0.735).
+export const HEAD = { rx: 0.676, ry: 0.92 };
 export const SCAN_GRID = 64;
 export const SIM_GRID = 32;
 
@@ -230,7 +231,14 @@ export function simMap(type: BleedType, region: string, volume: number) {
 }
 
 export function initialSims(): Simulation[] {
-  return HYPOTHESES.map((h, i) => ({
+  // Interleave by agent so the runs in flight sit together at the front of the grid.
+  const order = [...HYPOTHESES].sort(
+    (a, b) =>
+      HYPOTHESES.filter((x) => x.agent === a.agent).indexOf(a) -
+        HYPOTHESES.filter((x) => x.agent === b.agent).indexOf(b) ||
+      REGIONS.indexOf(a.agent) - REGIONS.indexOf(b.agent),
+  );
+  return order.map((h, i) => ({
     id: `sim-${String(i + 1).padStart(2, "0")}`,
     type: h.type,
     region: h.region,
