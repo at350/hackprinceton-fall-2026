@@ -288,13 +288,18 @@ function Composer() {
   );
 }
 
+const FADE = "linear-gradient(to bottom, transparent 0, black 24px)";
+
 export function AgentPanel() {
   const messages = useDash((s) => s.messages);
   const scroller = useRef<HTMLDivElement>(null);
+  const [clipped, setClipped] = useState(false);
 
   useEffect(() => {
     const el = scroller.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    setClipped(el.scrollTop > 4);
   }, [messages]);
 
   return (
@@ -307,11 +312,10 @@ export function AgentPanel() {
       <Status />
       <div
         ref={scroller}
+        onScroll={(e) => setClipped(e.currentTarget.scrollTop > 4)}
         className="scroll-thin mt-2 flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-4 pt-4 pb-3"
-        style={{
-          maskImage: "linear-gradient(to bottom, transparent 0, transparent 10px, black 40px)",
-          WebkitMaskImage: "linear-gradient(to bottom, transparent 0, transparent 10px, black 40px)",
-        }}
+        // Fade the top edge only when earlier messages are scrolled out of view.
+        style={clipped ? { maskImage: FADE, WebkitMaskImage: FADE } : undefined}
       >
         {messages.map((m) => (
           <Message key={m.id} m={m} />
