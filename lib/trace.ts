@@ -142,8 +142,40 @@ export function deriveTrace(s: DashState): Trace {
     reasoning: agentMsgs,
   });
 
-  const model = node({ id: "model", kind: "model", title: "Chat model", subtitle: "Claude", status: agent.status === "idle" ? "idle" : "success" });
-  const memory = node({ id: "memory", kind: "memory", title: "Scan memory", subtitle: "Thread state", status: agent.status === "idle" ? "idle" : "success" });
+  // Models as configured in agent/lucid/config.py (LUCID_MODEL, LUCID_REGION_MODEL).
+  const model = node({
+    id: "model",
+    kind: "model",
+    title: "Chat model",
+    subtitle: "Claude",
+    status: agent.status === "idle" ? "idle" : "success",
+    output: [
+      ["triage lead", "Claude Sonnet 5"],
+      ["region agents", "Claude Haiku 5.5"],
+    ],
+  });
+
+  // The agent's memory is the patient baseline in the LangGraph store (agent/README.md):
+  // recall_baseline reads it at the start; an approved result becomes the baseline,
+  // so a re-scan is judged against the same head.
+  const approved = approval?.state === "approved";
+  const memory = node({
+    id: "memory",
+    kind: "memory",
+    title: "Patient memory",
+    subtitle: "Baseline store",
+    status: agent.status === "idle" ? "idle" : "success",
+    input: agent.status === "idle" ? [] : [["recall_baseline", "this patient's first approved scan"]],
+    output:
+      agent.status === "idle"
+        ? []
+        : [
+            ["baseline found", "None. This is the patient's first scan"],
+            ...(approved && best
+              ? ([["saved as baseline", `${best.type}, ${best.region}, ${best.volume_ml} mL`], ["used for", "the re-scan in 10 minutes"]] as [string, string][])
+              : ([["saves", "the approved result, for the next re-scan"]] as [string, string][])),
+          ],
+  });
 
   const simTool = node({
     id: "forward_sim",

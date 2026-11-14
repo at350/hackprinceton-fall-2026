@@ -23,7 +23,7 @@ function Fields({ rows, empty }: { rows: [string, string][]; empty: string }) {
     <dl className="flex flex-col gap-4">
       {rows.map(([k, v], i) => (
         <div key={i} className="flex flex-col gap-1">
-          <dt className="text-[12px] text-muted capitalize">{k}</dt>
+          <dt className="text-[12px] text-muted first-letter:uppercase">{k}</dt>
           <dd className="text-[14px] leading-snug text-text">{v}</dd>
         </div>
       ))}
