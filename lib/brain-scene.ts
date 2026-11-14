@@ -50,11 +50,16 @@ const fragmentShader = `
     vec3 key = normalize(vec3(-0.6, 0.7, 1.1));
     vec3 rim = normalize(vec3(0.8, -0.4, 0.5));
     float light = 0.36 + 0.72 * max(dot(n, key), 0.0) + 0.10 * max(dot(n, rim), 0.0);
-    float groove = smoothstep(0.35, 0.95, vSulc);
-    float ao = 1.0 - groove * folding * (0.30 + depth * 0.16);
+    // Closed sulci read as narrow clefts, not broad missing bands of tissue.
+    // At the deepest setting the original pial valleys become visible again.
+    float opening = smoothstep(1.0, 2.0, depth);
+    float groove = pow(smoothstep(mix(0.25, 0.35, opening), mix(0.65, 0.95, opening), vSulc), mix(3.0, 1.0, opening));
+    float ao = 1.0 - groove * folding * (0.45 + min(depth, 1.0) * 0.20);
+    // Diffuse crown lift, not a specular highlight: the cortex stays matte.
+    float crown = 1.0 + 0.11 * (1.0 - smoothstep(0.15, 0.45, vSulc)) * folding * max(dot(n, key), 0.0);
     // Fine, stationary tissue texture, separate from the anatomical folds.
     float tissueGrain = 0.95 + 0.10 * grain(vPosition * 230.0);
-    vec3 cortex = vec3(0.56, 0.65, 0.70) * light * ao * tissueGrain;
+    vec3 cortex = vec3(0.56, 0.65, 0.70) * light * ao * crown * tissueGrain;
     vec2 mapPosition = vec2(vPosition.x, -vPosition.y);
     // The anatomical silhouette is not a perfect ellipse. Extend the nearest
     // in-mask sample to its rim instead of exposing a jagged, unscanned border.
