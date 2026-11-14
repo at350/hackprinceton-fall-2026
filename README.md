@@ -35,7 +35,7 @@ The switch in the middle of the header flips between **Dashboard** and **Agent t
 
 You can also type to the agent; it answers from a few canned replies. After **Reject**, typing "re-scan" restarts the demo. Clicking a tab stops the demo from switching tabs for you until the next restart.
 
-Dev aid (dev builds only): in the browser console, `__demo.seek(60000)` jumps the story to 1:00, and `__demo.setView("trace")` or `__demo.setView("dashboard")` switches the view. The store is exposed in `lib/demo.ts`.
+Dev aid (dev builds only): in the browser console, `__demo.seek(60000)` jumps the story to 1:00, and `__demo.setView("trace")` or `__demo.setView("dashboard")` switches the view. The store is exposed in `lib/demo.ts`. For screenshots, `?view=trace&t=90000` opens a view at a story time.
 
 ## Views
 
@@ -52,8 +52,8 @@ An n8n-style canvas of the same run, derived from the demo state by `deriveTrace
 - **Main flow:** Lucid device → Read scan spots → Build likelihood map → Triage agent → Rank best fit → Medic approval → Send pre-alert. Edges light up with item counts as nodes finish.
 - **Triage agent:** labelled connectors along its bottom edge for Chat Model, Memory, and Tool. The Tool connector holds the four region sub-agents (frontal, temporal, parietal, occipital) as pills; the `forward_sim` and `fit_score` tools feed each region agent.
 - **Run states:** not run, running (spinning border), waiting (slow spin, on Medic approval), success (cyan border and check), rejected (orange border).
-- **Node details** (right): status, start time, duration, and **Output / Input** tabs as field/value tables. The Triage agent also has a **Reasoning** tab with its messages.
-- **Logs** (bottom): collapsible, one line per node start and finish.
+- **Node details** (right): status, start time, duration, and **Output / Input** tabs listing each field. The Triage agent opens on a **Reasoning** tab with its messages, and its Output is what it produced (verdict, best fit, recommendation).
+- **Logs** (bottom): collapsed to one strip showing the latest entry; expand for one line per node start and finish. Clicking a row selects that node.
 - **Canvas controls:** drag to pan, scroll to zoom; fit view / zoom in / zoom out buttons bottom left. Fits itself on resize.
 
 ## Project layout
@@ -124,7 +124,7 @@ Look and motion are taken from the references, not invented:
 | [GenRevive](https://genrevive.peachworlds.com/) | The brain as one large, lit centerpiece with a cool rim light and a faint surface scan grid; glass cards at the edges |
 | [Alpine Bio](https://www.alpbio.com/) | Switzer type; large tightly tracked statement (−0.05em) for the verdict; faint vertical guide lines; 25px / 600ms fade-up entrances |
 | [Delta Cafés](https://deltacafes.com/en) | Floating translucent nav pill; filled pill CTA with a separate arrow circle and arrow-swap hover; small cards clustered over the image |
-| [Koniku](https://koniku.com/) | Mask-up swap for changing text and numbers; hover and expo easing curves; 9% white hairlines; tracked uppercase micro-labels |
+| [Koniku](https://koniku.fiftyseven.co/) | Mask-up swap for changing text and numbers; hover and expo easing curves; 9% white hairlines; tracked uppercase micro-labels |
 | [Grainient](https://grainient.supply/) | App inside one large rounded frame; near-black field with a diffused grainy glow along the bottom (teal, violet, and a warm hint of the heat colour) |
 | [Beautiful UI](https://www.beautifului.dev/) | Agent panel: one status row with a 3×3 dot grid (animates while working, pause shape while waiting, dim when idle) and shimmering label, expanding to the plan with nested tool calls and detail chips; word-by-word streaming; inline approval card; inset composer. Also the 44px region agent rows and 14px charcoal surfaces. 100–400ms timings with `cubic-bezier(.23,1,.32,1)` |
 | [n8n](https://github.com/n8n-io/n8n) | Agent trace view and the header view switch: 16px dot grid, node shapes (96px nodes, rounded-left trigger, circular sub-nodes, agent tools as pills), dashed AI connectors, run-state borders, item-count labels on edges, node details tabs, fit / zoom controls. Values taken from n8n's open-source canvas code |
