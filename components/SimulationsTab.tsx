@@ -80,16 +80,16 @@ function Thumb({ sim }: { sim: Simulation }) {
         <svg
           viewBox="-1 -1 2 2"
           className="absolute inset-0 size-full -rotate-90 overflow-visible"
-          style={{ filter: "drop-shadow(0 0 2.5px rgba(34,195,230,0.45))" }}
+          style={{ filter: "drop-shadow(0 0 1.5px rgba(34,195,230,0.9)) drop-shadow(0 0 5px rgba(34,195,230,0.55))" }}
           aria-hidden
         >
-          <ellipse rx={HEAD.ry * 1.04} ry={HEAD.rx * 1.06} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth={0.02} />
+          <ellipse rx={HEAD.ry * 1.04} ry={HEAD.rx * 1.06} fill="none" stroke="rgba(34,195,230,0.12)" strokeWidth={0.024} />
           <ellipse
             rx={HEAD.ry * 1.04}
             ry={HEAD.rx * 1.06}
             fill="none"
-            stroke="rgba(34,195,230,0.8)"
-            strokeWidth={0.022}
+            stroke="#22c3e6"
+            strokeWidth={0.03}
             strokeLinecap="round"
             pathLength={1}
             strokeDasharray="1 1"
