@@ -3,6 +3,7 @@
 // healthy ones sink. The side panel says what it adds up to.
 import { tooltip } from './charts.js';
 import { setupControls, pct } from './controls.js';
+import { RaceHead } from './race3d.js';
 
 const $ = (id) => document.getElementById(id);
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -10,7 +11,9 @@ const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const REGIONS = ['Frontal', 'Frontotemporal', 'Temporal', 'Parietal', 'Occipital'];
 const KIND_NAMES = { subdural: 'subdural', epidural: 'epidural', intracerebral: 'deep' };
 const spotName = (id) => (id ? `${id[0] === 'L' ? 'left' : 'right'} ${id.slice(2)}` : '');
-const STEP_S = 0.7;  // seconds per spot in the race animation
+const STEP_S = 0.9;  // seconds per spot in the race animation
+const head = new RaceHead(document.getElementById('race-3d'));
+head.loadBrain('brain.json');
 
 let race = null;
 let filter = { size: 'all', kind: 'all' };
@@ -105,7 +108,7 @@ function draw(t) {
   }
   if (!race) return;
 
-  const upto = REDUCED ? 10 : Math.min(10, (t - raceStart) / STEP_S);
+  const upto = REDUCED ? 10 : Math.min(10, Math.max(0, t - raceStart) / STEP_S);
   const ember = css('--ember'), frost = css('--frost');
   // Dimmed lines first, then bleeds, then healthy on top: the healthy band near the bottom would
   // otherwise hide under bleeds that never climbed.
@@ -157,7 +160,10 @@ function draw(t) {
 }
 
 function loop(t) {
-  draw(t / 1000);
+  const s = t / 1000;
+  draw(s);
+  const upto = race ? (REDUCED ? 10 : Math.min(10, Math.max(0, s - raceStart) / STEP_S)) : 0;
+  head.frame(upto, matches, hover, s);
   requestAnimationFrame(loop);
 }
 
@@ -253,6 +259,7 @@ $('replay').addEventListener('click', () => { raceStart = performance.now() / 10
 
 function hello(h) {
   live = { curve: [h.prevalence ?? 0.1], label: h.label, late: false };
+  head.setLive(null);
   $('scan-label').textContent = h.label;
   $('live-text').textContent = `${h.label}: waiting for the first spot.`;
 }
@@ -264,6 +271,7 @@ function update(u) {
   while (live.curve.length <= k) live.curve.push(live.curve[live.curve.length - 1]);
   live.curve[k] = u.p_bleed;
   live.curve.length = k + 1;
+  head.setLive(u.p_bleed >= 0.5 && u.location && u.location.peak_mm ? u.location.peak_mm : null);
   if (!race) return;
   // Which crowd is it running with? Compare against the patients at the same spot.
   const near = race.patients.map((p) => ({ p, d: Math.abs(p.curve[k] - u.p_bleed) })).sort((a, b) => a.d - b.d).slice(0, 20);
@@ -277,6 +285,8 @@ function update(u) {
 setupControls();
 fetch('race.json').then((r) => r.json()).then((data) => {
   race = data;
+  head.setSpots(data.spots);
+  head.setPatients(data.patients);
   const n = data.patients.length;
   $('race-title').textContent = `${n} simulated patients, scanned spot by spot`;
   raceStart = performance.now() / 1000 + 0.4;

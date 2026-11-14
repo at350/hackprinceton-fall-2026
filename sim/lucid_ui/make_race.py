@@ -17,12 +17,20 @@ from pathlib import Path
 import numpy as np
 
 import lucid_sim as ls
+from lucid_sim.anatomy import HEAD_RADIUS_MM
 from lucid_interp.layers import Calibration, _pairs, interpret
 from lucid_interp.locate import HUMAN_PRIOR, locate_pairs
 
 OUT = Path(__file__).parent / "static" / "race.json"
 PREVALENCE = 0.1
 KINDS = (("subdural", 0.5), ("epidural", 0.25), ("intracerebral", 0.25))
+
+
+def geometry(spot: str, volume: float, kind: str) -> dict:
+    """Where the bleed sits, for drawing: its centre (mm, head frame) and a radius."""
+    centre, depth, thick, spread = ls.Bleed(spot, volume, kind).geometry(ls.HUMAN)
+    pos = centre * (HEAD_RADIUS_MM - depth - thick / 2)
+    return {"pos": [round(float(v), 1) for v in pos], "radius": round(float(max(spread, thick / 2)), 1)}
 
 
 def patient(i: int, bleed: bool) -> dict:
@@ -33,7 +41,7 @@ def patient(i: int, bleed: bool) -> dict:
         spot = ls.DEFAULT_SPOTS[rng.integers(len(ls.DEFAULT_SPOTS))]
         volume = float(rng.uniform(10, 60))
         bleeds = [ls.Bleed(spot, volume, str(kind))]
-        info.update(kind=str(kind), spot=spot.id, volume=round(volume, 1))
+        info.update(kind=str(kind), spot=spot.id, volume=round(volume, 1), **geometry(spot.id, volume, str(kind)))
     plan = ls.add_random_artifacts(ls.default_plan(), 0.2, seed=i)
     session = ls.simulate(ls.Subject(ls.HUMAN, bleeds, seed=i), plan, seed=i)
     cal = Calibration()

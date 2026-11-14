@@ -9,6 +9,9 @@
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="race.css">
+  <script type="importmap">
+    {"imports": {"three": "./vendor/three.module.js", "three/addons/": "./vendor/addons/"}}
+  </script>
 </head>
 <body>
   <header class="bar">
@@ -48,7 +51,7 @@
       <div class="race-head">
         <div>
           <h1 id="race-title">Simulated patients, scanned spot by spot</h1>
-          <p class="race-lede">Each line is one simulated patient run through the same pipeline as the probe: the chance of a bleed after each spot. Patients with a bleed are ember, healthy ones frost. Watch where they split.</p>
+          <p class="race-lede">Each line is one simulated patient run through the same pipeline as the probe: the chance of a bleed after each spot. Patients with a bleed are ember, healthy ones frost. Watch where they split, and watch each bleed light up in the head as the probe reaches it.</p>
         </div>
         <button type="button" id="replay" class="ghost">Run the race again</button>
       </div>
@@ -78,6 +81,14 @@
     </section>
 
     <aside class="race-side">
+      <section class="race-3d-wrap">
+        <div class="race-3d"><canvas id="race-3d" aria-label="The simulated bleeds in a head, lighting up as the scan finds them"></canvas></div>
+        <div class="legend race-3d-key">
+          <span><i class="dot ember"></i>Bleed the scan has found</span>
+          <span><i class="dot ash"></i>Not found yet, or missed</span>
+          <span><i class="live-ring"></i>This scan's estimate</span>
+        </div>
+      </section>
       <section>
         <h2>After all ten spots</h2>
         <div class="race-stats">

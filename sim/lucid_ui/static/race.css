@@ -1,5 +1,5 @@
 /* Race: one big chart of many patients on the left, what it adds up to on the right. */
-.race { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(300px, 1fr); gap: 1px; background: var(--line); min-height: calc(100vh - 70px); }
+.race { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(320px, 1fr); gap: 1px; background: var(--line); min-height: calc(100vh - 70px); }
 .race > * { background: var(--ward); }
 .race-main { padding: 18px var(--gutter) 20px; display: flex; flex-direction: column; min-width: 0; }
 .race-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
@@ -19,6 +19,12 @@
 .live-swatch { display: inline-block; width: 18px; height: 3px; border-radius: 2px; background: var(--ink); }
 
 .race-side { display: flex; flex-direction: column; }
+.race-3d-wrap { padding: 0 !important; }
+.race-3d { position: relative; height: clamp(340px, 54vh, 600px); background: radial-gradient(ellipse at 50% 45%, #15233d 0%, var(--ward) 72%); }
+#race-3d { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
+.race-3d-key { padding: 8px var(--gutter) 12px; }
+.dot.ash { background: transparent; box-shadow: inset 0 0 0 1.5px #5a7396; }
+.live-ring { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--ink); }
 .race-side > section { padding: 16px var(--gutter); border-bottom: 1px solid var(--line); }
 .race-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 10px; }
 .race-stats > div { display: grid; gap: 4px; }
