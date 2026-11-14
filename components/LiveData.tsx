@@ -6,11 +6,10 @@ import { CHART_WINDOW_MS } from "@/lib/config";
 import { DEVICE_BUFFER_CAP, deviceBuffer } from "@/lib/mock";
 import type { DeviceSample } from "@/lib/types";
 import { useDash } from "@/lib/useDash";
-import { IconPlug } from "./icons";
 import { EASE_ENTER, QualityBadge } from "./ui";
 
 /** Rolling 10 s line chart, drawn straight from the ring buffer every frame. */
-function SignalChart({ series, minSpan }: { series: "coil" | "nir"; minSpan: number }) {
+function SignalChart({ series, minSpan, live }: { series: "coil" | "nir"; minSpan: number; live: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = ref.current!;
@@ -43,7 +42,8 @@ function SignalChart({ series, minSpan }: { series: "coil" | "nir"; minSpan: num
       ctx.setLineDash([]);
 
       const b = deviceBuffer;
-      if (b.size < 2) return;
+      // Nothing to plot unless the device is streaming.
+      if (!live || b.size < 2) return;
       const vals = series === "coil" ? b.coil : b.nir;
       const now = b.t[(b.head - 1 + DEVICE_BUFFER_CAP) % DEVICE_BUFFER_CAP];
       const from = now - CHART_WINDOW_MS;
@@ -97,7 +97,7 @@ function SignalChart({ series, minSpan }: { series: "coil" | "nir"; minSpan: num
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [series, minSpan]);
+  }, [series, minSpan, live]);
   return <canvas ref={ref} className="size-full" />;
 }
 
@@ -132,7 +132,7 @@ const DIAL_R = 30;
 const TICKS = Array.from({ length: 36 }, (_, i) => i * 10);
 
 /** Bubble level: where the device is pointing, read like an instrument. */
-function Tilt({ pitch, roll }: { pitch: number; roll: number }) {
+function Tilt({ pitch, roll, live }: { pitch: number; roll: number; live: boolean }) {
   // Bubble position, clamped to the dial.
   let bx = (roll / TILT_MAX) * (DIAL_R - 6);
   let by = (-pitch / TILT_MAX) * (DIAL_R - 6);
@@ -170,20 +170,20 @@ function Tilt({ pitch, roll }: { pitch: number; roll: number }) {
         <line x1={-DIAL_R + 6} x2={DIAL_R - 6} stroke="rgba(255,255,255,0.14)" strokeWidth="0.5" />
         <line y1={-DIAL_R + 6} y2={DIAL_R - 6} stroke="rgba(255,255,255,0.14)" strokeWidth="0.5" />
         {/* Tilt marker: thin reticle, flat colour, no glow. */}
-        <g style={{ transform: `translate(${bx}px, ${by}px)`, transition: "transform 160ms linear" }} stroke={CYAN_HEX} strokeWidth="1.2" fill="none">
+        {live && <g style={{ transform: `translate(${bx}px, ${by}px)`, transition: "transform 160ms linear" }} stroke={CYAN_HEX} strokeWidth="1.2" fill="none">
           <circle r="3.6" />
           <line x1="-7.5" x2="-5" />
           <line x1="5" x2="7.5" />
           <line y1="-7.5" y2="-5" />
           <line y1="5" y2="7.5" />
-        </g>
+        </g>}
       </svg>
       <div className="flex flex-col gap-1 whitespace-nowrap text-[13px] leading-none text-muted">
         <span className="flex justify-between gap-3">
-          Pitch <span className="w-12 text-right font-medium text-text">{pitch.toFixed(1)}°</span>
+          Pitch <span className="w-12 text-right font-medium text-text">{live ? `${pitch.toFixed(1)}°` : "--"}</span>
         </span>
         <span className="flex justify-between gap-3">
-          Roll <span className="w-12 text-right font-medium text-text">{roll.toFixed(1)}°</span>
+          Roll <span className="w-12 text-right font-medium text-text">{live ? `${roll.toFixed(1)}°` : "--"}</span>
         </span>
       </div>
     </div>
@@ -204,23 +204,15 @@ export function LiveData() {
       className="surface raised relative flex h-[284px] shrink-0 flex-col gap-2 p-4"
     >
       <ChartRow label="Coil" unit="dB" value={latest ? latest.coil_db.toFixed(1) : "--"}>
-        <SignalChart series="coil" minSpan={3} />
+        <SignalChart series="coil" minSpan={3} live={live} />
       </ChartRow>
       <ChartRow label="NIR" unit="a.u." value={latest ? latest.nir.toFixed(3) : "--"}>
-        <SignalChart series="nir" minSpan={0.06} />
+        <SignalChart series="nir" minSpan={0.06} live={live} />
       </ChartRow>
       <div className="flex items-center justify-between gap-3 border-t border-[rgba(255,255,255,0.06)] pt-3">
-        <Tilt pitch={latest?.imu.pitch ?? 0} roll={latest?.imu.roll ?? 0} />
-        <QualityBadge quality={quality} live={live && latest !== null} />
+        <Tilt pitch={latest?.imu.pitch ?? 0} roll={latest?.imu.roll ?? 0} live={live && latest !== null} />
+        {live && latest !== null && <QualityBadge quality={quality} live />}
       </div>
-      {!live && (
-        <div className="absolute inset-x-4 top-0 bottom-[60px] grid place-items-center">
-          <span className="flex items-center gap-2 rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(8,10,13,0.8)] px-3 py-1.5 text-[13px] text-muted">
-            <IconPlug size={14} />
-            Device disconnected
-          </span>
-        </div>
-      )}
     </motion.section>
   );
 }
