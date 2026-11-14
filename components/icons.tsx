@@ -123,6 +123,12 @@ export const IconDashboard = (p: P) => <Svg {...p} body={"<path fill=\"currentCo
 /** Phosphor exclamation-mark (light) */
 export const IconExclamation = (p: P) => <Svg {...p} body={"<path fill=\"currentColor\" d=\"M142 200a14 14 0 1 1-14-14a14 14 0 0 1 14 14m-14-42a6 6 0 0 0 6-6V48a6 6 0 0 0-12 0v104a6 6 0 0 0 6 6\"/>"} />;
 
+/**
+ * Anthropic mark, from Simple Icons (CC0) via api.iconify.design, simple-icons:anthropic.
+ * Drawn on a 24px grid, so it brings its own viewBox; colour comes from currentColor.
+ */
+export const IconAnthropic = (p: P) => <Svg viewBox="0 0 24 24" {...p} body={"<path fill=\"currentColor\" d=\"M17.304 3.541h-3.672l6.696 16.918H24Zm-10.608 0L0 20.459h3.744l1.37-3.553h7.005l1.369 3.553h3.744L10.536 3.541Zm-.371 10.223L8.616 7.82l2.291 5.945Z\"/>"} />;
+
 /** Signal bars: n of 3 filled. */
 export function IconBars({ level, size = 16 }: { level: 1 | 2 | 3; size?: number }) {
   return (

@@ -14,7 +14,7 @@ export type TraceKind = "trigger" | "step" | "agent" | "wait" | "action" | "mode
  */
 export type TraceHero =
   | { kind: "verdict"; status: ScanStatus }
-  | { kind: "statement"; text: string; tone?: "primary" | "bleed"; icon?: "check" | "x"; size?: "question" }
+  | { kind: "statement"; text: string; tone?: "primary" | "bleed"; icon?: "check" | "x" | "anthropic"; size?: "question" }
   | { kind: "number"; label: string; value: string }
   | { kind: "spots"; map: number[][] | null; spots: ScanSpot[]; current: number | null; weak: number[] }
   | { kind: "fit"; map: number[][]; label: string; value: string };
@@ -271,7 +271,7 @@ export function deriveTrace(s: DashState): Trace {
     panel:
       agent.status === "idle"
         ? { hero: null, sentence: "Used once the triage agent starts.", quiet: true }
-        : { hero: { kind: "statement", text: "Claude" }, sentence: "Sonnet 5 runs the triage agent, and Haiku 5.5 runs the region agents." },
+        : { hero: { kind: "statement", text: "Claude", icon: "anthropic" }, sentence: "Sonnet 5 runs the triage agent, and Haiku 5.5 runs the region agents." },
   });
 
   // The agent's memory is the patient baseline in the LangGraph store (agent/README.md):

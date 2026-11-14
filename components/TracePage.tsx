@@ -8,7 +8,7 @@ import { pointAt } from "@/lib/mock";
 import type { TraceFold, TraceHero, TraceLog, TraceNode, TracePanel, TracePlanStep } from "@/lib/trace";
 import { deriveTrace } from "@/lib/trace";
 import { formatClock, useDash } from "@/lib/useDash";
-import { IconCheck, IconChevronDown, IconClock, IconPause, IconTool, IconX } from "./icons";
+import { IconAnthropic, IconCheck, IconChevronDown, IconClock, IconPause, IconTool, IconX } from "./icons";
 import { NODE_ICON, TraceCanvas } from "./TraceCanvas";
 import { EASE_ENTER, SCAN_STATUS, heatRGB } from "./ui";
 
@@ -33,6 +33,9 @@ const STATUS: Record<TraceNode["status"], { label: string; color: string; icon: 
 };
 
 const TONE = { primary: "var(--primary)", bleed: "var(--bleed-text)" };
+// Geist's cap height (measured: 0.726 em), and the Anthropic mark's outline within its 24px grid.
+const CAP = 0.726;
+const ANTHROPIC_BOX = "0 3.541 24 16.918";
 // Both edges fall in the body's empty padding at rest, so the fade only shows while scrolling.
 const FADE_EDGES = "linear-gradient(to bottom, transparent, black 24px, black calc(100% - 24px), transparent)";
 // 42px at full panel width, smaller as the panel narrows so short verdicts stay on one line.
@@ -141,6 +144,14 @@ function Hero({ hero }: { hero: TraceHero }) {
     }
     case "statement":
       if (hero.size === "question") return <p className="font-display text-[27px] font-medium leading-[1.12] tracking-[-0.035em] text-text">{hero.text}</p>;
+      // The mark's viewBox is cropped to its outline so its height can match the capitals.
+      if (hero.icon === "anthropic")
+        return (
+          <p className={`flex items-center gap-[0.24em] ${BIG} text-text`}>
+            <IconAnthropic viewBox={ANTHROPIC_BOX} className="shrink-0" style={{ height: `${CAP}em`, width: `${(CAP * 24) / 16.918}em` }} />
+            <span>{hero.text}</span>
+          </p>
+        );
       return (
         <p className={`flex items-start gap-3 ${BIG}`} style={{ color: hero.tone ? TONE[hero.tone] : "var(--text)" }}>
           {hero.icon === "check" && <IconCheck size={30} className="mt-[6px] shrink-0" />}
