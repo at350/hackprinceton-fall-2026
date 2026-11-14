@@ -1,8 +1,27 @@
 # Lucid signal tools
 
-Two packages:
+Three packages:
 - `lucid_sim` simulates what the probe sends.
-- `lucid_interp` interprets it: per-spot layers, a Fourier breakdown, a left/right screening flag, and a 3D map of where the bleed most likely is.
+- `lucid_interp` interprets it: per-spot layers, a Fourier breakdown, a left/right screening flag, a 3D map of where the bleed most likely is, and a live mode.
+- `lucid_ui` is the live web view for the demo.
+
+## Live view (`lucid_ui`)
+
+```bash
+python -m lucid_ui                          # open http://localhost:8765, pick a head, press Start scan
+python -m lucid_ui --serial /dev/ttys004    # the board (or `python -m lucid_sim stream --pty`)
+python -m lucid_ui --replay runs/human_L_temporal.csv
+python -m lucid_ui --port 8770              # if 8765 is taken
+```
+
+As readings come in:
+- **Head.** A real cortex (FreeSurfer's fsaverage5 template, fitted inside the model skull) under a glass scalp, with the ten spots and the probe moving between them. Each of the **500 simulated heads** from the latest update is a particle. Heads that explain the readings without a bleed drift as frost around the scalp. Heads with a bleed fly inside, as embers, to where they put it. As evidence builds, the swarm condenses on the bleed, the cortex lights up with the chance of blood, and the camera turns to face it. For simulated heads, "Show the bleed the simulator placed" draws the true one for comparison.
+- **Chance of bleed** after each spot, with the location estimate in words.
+- **Next spot**, with why (finishes a pair, retake, confirming rescan) and what the simulations expect it to read.
+- **Left against right.** One row per region: the 500 simulated heads' right − left difference as dots, the measured difference with 2 standard errors, and the ±3 standard-error lines. A table view is one click away.
+- **Live signals**: coil (dB below air), reflected near-infrared, and probe motion, with time on a spot shaded.
+
+Standard library server with Server-Sent Events, three.js 0.160 vendored in `lucid_ui/static/vendor` (MIT), so it runs offline. Fonts come from Google Fonts and fall back to system fonts. `lucid_ui/make_brain.py` rebuilds `static/brain.json` from nilearn's fsaverage5 files.
 
 ## TODO (hardware, blocks calibration)
 

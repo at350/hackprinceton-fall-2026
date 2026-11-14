@@ -69,13 +69,15 @@ class LiveScan:
 
     def __init__(self, spots=DEFAULT_SPOTS, calibration: Calibration = Calibration(),
                  prior: BleedPrior = HUMAN_PRIOR, prevalence: float = 0.1, n_sims: int = 500,
-                 settle_s: float = 1.0, every_s: float = 0.5, seed: int | None = 0):
+                 settle_s: float = 1.0, every_s: float = 0.5, seed: int | None = 0, paint_blood: bool = False):
         self.plan = [Spot.parse(s) for s in spots]
         self.cal, self.prior = calibration, prior
         self.prevalence = prevalence  # chance of a bleed before any reading
         self.n_sims = n_sims
         self.settle_s = settle_s  # probe must be off a spot this long before the spot counts as finished
         self.every_s = every_s
+        self.paint_blood = paint_blood  # blood map on every update (about 0.5 s more), not only the last
+        self.sims: dict | None = None  # the last batch of simulated heads, for drawing
         self.rng = np.random.default_rng(seed)
         self.updates: list[Update] = []
         self.interp: Interpretation | None = None
@@ -121,6 +123,15 @@ class LiveScan:
         self._done = tuple(c.spot for c in self.interp.contacts if c.spot and not c.spot.startswith("extra"))
         return self._update(final=True)
 
+    def status(self) -> dict:
+        """Where the probe is, as of the last check: on a spot (which) or in the air (and which spot is next)."""
+        contacts = self.interp.contacts if self.interp else []
+        on_head = bool(contacts) and contacts[-1].end >= len(self._rows) - 2
+        if on_head:
+            return {"on_head": True, "spot": contacts[-1].spot}
+        nxt = self.plan[len(contacts)].id if len(contacts) < len(self.plan) else None
+        return {"on_head": False, "spot": nxt}
+
     # Internals
 
     def _frames(self) -> pd.DataFrame:
@@ -160,14 +171,14 @@ class LiveScan:
 
         pairs = _pairs(ok, self.cal) if len(ok) else pd.DataFrame({"region": pd.Series(dtype=str), "z": pd.Series(dtype=float)})
         pairs_done = int(np.isfinite(pairs["z"].astype(float)).sum()) if len(pairs) else 0
-        loc = locate_pairs(pairs, self.cal.coil.decay_mm, self.prior, blood=final)
+        loc = locate_pairs(pairs, self.cal.coil.decay_mm, self.prior, blood=final or self.paint_blood)
         self.location = loc
         bf, prev = loc.summary["bayes_factor"], self.prevalence
         p_bleed = bf * prev / (bf * prev + 1 - prev) if np.isfinite(bf) else 1.0
 
         confirm = [] if final else list(self._confirm)
         pending = [s for s in self.plan if s.id not in done] + [Spot.parse(s) for s in retake + confirm]
-        predictions = self._simulate(ok, loc, p_bleed, pending) if pending and not final else pd.DataFrame()
+        predictions = self._simulate(ok, loc, p_bleed, pending if not final else [])
         next_spot = None
         if retake or confirm:
             next_spot = (retake + confirm)[0]
@@ -202,6 +213,8 @@ class LiveScan:
                 spread = rng.choice(prior.spreads_mm, size=k)
                 contrast = rng.uniform(0, prior.max_contrast, size=k)
             rise[bleed] = bleed_rise(pts, spread, contrast, dirs, loc.decay_mm)
+        else:
+            pts, spread, contrast = np.zeros((0, 3)), np.zeros(0), np.zeros(0)
 
         by_spot = ok.set_index("spot") if len(ok) else None
         se_typ = float(ok["sigma_se"].median()) if len(ok) else 0.01
@@ -211,6 +224,18 @@ class LiveScan:
             tissue = implied.mean(axis=1)
         else:
             tissue = np.full(n, prior.tissue_sigma)
+
+        # Every region's R - L difference in each simulated head: measured spots only add their own noise.
+        def se_of(sid):
+            return float(by_spot.loc[sid, "sigma_se"]) if by_spot is not None and sid in by_spot.index else se_typ
+
+        regions = list(dict.fromkeys(s.region for s in DEFAULT_SPOTS))
+        pair_d = np.column_stack([
+            rise[:, col[f"R-{r}"]] - rise[:, col[f"L-{r}"]]
+            + rng.normal(0, np.sqrt(cal.asymmetry_sd**2 + se_of(f"R-{r}") ** 2 + se_of(f"L-{r}") ** 2), n)
+            for r in regions])
+        self.sims = {"bleed": bleed, "points": pts, "spread": spread, "contrast": contrast,
+                     "regions": regions, "pair_d": pair_d}
 
         coil, f0 = cal.coil, cal.coil.f0_hz
         rows = []
