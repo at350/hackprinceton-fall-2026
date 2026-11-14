@@ -490,6 +490,24 @@ def test_map_png_left_right():
         assert (on_left > 5000 and on_right == 0) if left else (on_right > 5000 and on_left == 0), (cols, on_left, on_right)
 
 
+def test_map_png_true_proportions():
+    # The cortex keeps the real brain's proportions (fsaverage6 pial: 138.66 x 174.21 x 127.66 mm), not those of the
+    # dashboard's display units, which are 8% long from above.
+    from lucid.physics import render
+
+    def extent(name):  # silhouette width and height in pixels, at half coverage
+        view = render._cortex()[name]
+        mask = np.zeros(view["shape"], bool)
+        mask[view["on"]] = view["alpha"] > 0.5
+        rows, cols = np.nonzero(mask)
+        return np.ptp(cols) + 1, np.ptp(rows) + 1
+    w, h = extent("top")
+    assert abs(w / h - 138.66 / 174.21) < 0.01, (w, h)
+    for side in ("left", "right"):
+        w, h = extent(side)
+        assert abs(h / w - 127.66 / 174.21) < 0.01, (side, w, h)
+
+
 def test_map_png_without_cortex_cache():
     from lucid.physics import render
 

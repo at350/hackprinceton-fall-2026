@@ -2,11 +2,12 @@
 
 The dashboard's Scan tab draws the FreeSurfer fsaverage6 cortex with three.js (lib/brain-scene.ts): orthographic,
 from above, nose up, patient's left on screen left, and the medic can orbit it. This bakes three views once, without
-a browser: from above, and from the patient's left and right sides (crown up, each hemisphere alone). It decodes
-public/models/fsaverage6.bin.gz (lib/brain-model.ts), turns the mesh into view space as the scene's rotated group does,
-rasterises the front faces with a z-buffer at 4 x 4 samples per pixel, runs the fragment shader up to `vec3 cortex`
-(lights on view-space normals, `vPosition` in object space) and `projectCortexMap(vHead)` (object space) on every
-sample, and box-filters the samples into pixels. data/cortex_views.npz then holds, per view and pixel: the lit cortex
+a browser: from above, and from the patient's left and right sides (crown up, each hemisphere alone), in the brain's
+true proportions. It decodes public/models/fsaverage6.bin.gz (lib/brain-model.ts), scales it to true millimetres,
+turns it into view space as the scene's rotated group does, rasterises the front faces with a z-buffer at 4 x 4
+samples per pixel, runs the fragment shader up to `vec3 cortex` (lights on view-space normals of the true shape;
+`vPosition` and `projectCortexMap(vHead)` on the dashboard's own coordinates, so the heat stays on the same anatomy)
+on every sample, and box-filters the samples into pixels. data/cortex_views.npz then holds, per view and pixel: the lit cortex
 colour, the map coordinate, the heat opacity and the coverage (anti-aliased edge). render.py adds the scan heat.
 """
 from __future__ import annotations
@@ -24,6 +25,12 @@ from .render import VIEWS
 REPO = DATA_DIR.parents[1]
 MODEL = REPO / "public" / "models" / "fsaverage6.bin.gz"
 SS = 4  # samples per pixel along each axis
+# The shipped mesh is in the dashboard's display units. The offline export (tools/brain-export/export_fs6.py) scaled the
+# real fsaverage6 pial surface per axis to fit the scan map's head ellipse and toDisplayPositions scales again per axis,
+# so neither display units nor displayToHead's head frame keep the brain's proportions (wide to long from above: 0.735
+# and 0.895; the real surface: 0.796). The views are drawn on the real extents of the source surface: fsaverage6 pial,
+# both hemispheres, as Nilearn ships it (width, length, height in mm).
+TRUE_EXTENT_MM = np.array([138.66, 174.21, 127.66])
 BASE = np.array([0.58, 0.64, 0.68])
 RX, RY = 0.676, 0.92  # lib/brain-heat.ts
 RIM_HEAT_BAND, RIM_SAMPLE_BAND = np.radians(12), np.radians(10)
@@ -146,22 +153,24 @@ def rasterise(pos: np.ndarray, faces: np.ndarray, x0: float, y1: float, w: int, 
     return win
 
 
-def load() -> dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
-    """Each hemisphere: positions, normals (as the scene computes them), cavity, faces."""
+def load() -> dict[str, tuple[np.ndarray, ...]]:
+    """Each hemisphere: display positions, true-mm positions, normals of the true shape, cavity, faces."""
     hemis = decode(gzip.decompress(MODEL.read_bytes()))
-    return {side: (p, normals(p, f), s, f) for side, (p, f, s) in zip(("left", "right"), hemis)}
+    display = np.vstack([p for p, _, _ in hemis]).astype(np.float64)
+    mm = TRUE_EXTENT_MM / np.ptp(display, axis=0)  # millimetres per display unit, per axis
+    return {side: (p.astype(np.float64), p * mm, normals(p * mm, f), s, f) for side, (p, f, s) in zip(("left", "right"), hemis)}
 
 
-def merge(parts) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def merge(parts) -> tuple[np.ndarray, ...]:
     """Several hemispheres as one mesh."""
-    offsets = np.cumsum([0] + [len(p) for p, _, _, _ in parts])
-    return (*(np.concatenate([part[i] for part in parts]) for i in range(3)), np.concatenate([f + o for (_, _, _, f), o in zip(parts, offsets)]))
+    offsets = np.cumsum([0] + [len(part[0]) for part in parts])
+    return (*(np.concatenate([part[i] for part in parts]) for i in range(4)), np.concatenate([part[4] + o for part, o in zip(parts, offsets)]))
 
 
 def bake(mesh, rotation: np.ndarray, scale: float) -> dict[str, np.ndarray]:
-    """One view: the mesh turned by `rotation` (object to view space; camera at +z, up +y), at `scale` px per unit."""
-    pos, nrm, sulc, faces = mesh
-    view, vnrm = pos.astype(np.float64) @ rotation.T, nrm @ rotation.T  # modelViewMatrix, normalMatrix
+    """One view: the true-mm mesh turned by `rotation` (object to view space; camera at +z, up +y), at `scale` px per mm."""
+    pos, mm, nrm, sulc, faces = mesh
+    view, vnrm = mm @ rotation.T, nrm @ rotation.T  # modelViewMatrix, normalMatrix
 
     # Pixel box around the silhouette, a few pixels of margin.
     lo, hi = view[:, :2].min(0), view[:, :2].max(0)
@@ -185,7 +194,7 @@ def bake(mesh, rotation: np.ndarray, scale: float) -> dict[str, np.ndarray]:
         l1 = ((px - a[:, 0]) * (c[:, 1] - a[:, 1]) - (py - a[:, 1]) * (c[:, 0] - a[:, 0])) / area
         l2 = ((b[:, 0] - a[:, 0]) * (py - a[:, 1]) - (b[:, 1] - a[:, 1]) * (px - a[:, 0])) / area
         l = np.stack([1 - l1 - l2, l1, l2], -1)[..., None]
-        p = (l * pos[f]).sum(1)  # vPosition, and through displayToHead vHead: object space
+        p = (l * pos[f]).sum(1)  # vPosition, and through displayToHead vHead: the dashboard's object space
         n = (l * vnrm[f]).sum(1)  # vNormal: view space
         n /= np.linalg.norm(n, axis=1, keepdims=True)
         uv, opacity = project(p)
@@ -202,7 +211,7 @@ def bake(mesh, rotation: np.ndarray, scale: float) -> dict[str, np.ndarray]:
         "uv": np.where(on, mean[..., 3:5], 0).astype(np.float16),
         "opacity": np.where(on[..., 0], np.round(mean[..., 5] * 255), 0).astype(np.uint8),
         "alpha": np.round(cover * 255).astype(np.uint8),
-        "frame": np.array([x0, y1, scale], np.float64),  # pixel (r, c) centre: x0 + (c + .5) / scale, y1 - (r + .5) / scale
+        "frame": np.array([x0, y1, scale], np.float64),  # pixel (r, c) centre in view mm: x0 + (c + .5) / scale, y1 - (r + .5) / scale
     }
 
 

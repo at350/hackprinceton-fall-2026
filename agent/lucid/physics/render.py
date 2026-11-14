@@ -27,15 +27,16 @@ BG, TEXT, MUTED, BLEED, UNCERTAIN, SAFE = (0x0D, 0x0F, 0x11), (0xED, 0xEE, 0xF0)
 HEAT = np.array([[int(h[i : i + 2], 16) for i in (1, 3, 5)] for h in ("#39170f", "#501306", "#601b0b", "#702818", "#893826", "#b14932", "#ff5a36")], float)
 BASE = np.array([0.58, 0.64, 0.68])  # the cortex albedo in the fragment shader
 CAPTION = "Screening aid, not a diagnosis. Confirm with CT."
-# The views precompute_cortex.py bakes: the rotation from object to view space (camera at +z looking down -z, up +y;
-# object +x right ear, +y nose, +z crown), the size in px per scene unit at 1080 px wide, and which hemispheres are
-# drawn. Sides: crown up, each hemisphere alone so a side view never shows the other one past the poles; from the
-# left the front is on screen left, from the right on screen right. The two sides share a scale so they compare.
+# The views precompute_cortex.py bakes, in the brain's true proportions: the rotation from object to view space (camera
+# at +z looking down -z, up +y; object +x right ear, +y nose, +z crown), the size in px per millimetre at 1080 px wide,
+# and which hemispheres are drawn. Sides: crown up, each hemisphere alone so a side view never shows the other one past
+# the poles; from the left the front is on screen left, from the right on screen right. The two sides share a scale.
 VIEWS = {
-    "top": (((1, 0, 0), (0, 1, 0), (0, 0, 1)), 300, ("left", "right")),
-    "left": (((0, -1, 0), (0, 0, 1), (-1, 0, 0)), 256, ("left",)),
-    "right": (((0, 1, 0), (0, 0, 1), (1, 0, 0)), 256, ("right",)),
+    "top": (((1, 0, 0), (0, 1, 0), (0, 0, 1)), 3.0, ("left", "right")),
+    "left": (((0, -1, 0), (0, 0, 1), (-1, 0, 0)), 2.62, ("left",)),
+    "right": (((0, 1, 0), (0, 0, 1), (1, 0, 0)), 2.62, ("right",)),
 }
+LR_MM = 104  # the Scan tab's L and R sit at x = -0.98 and 0.98 display units, 104 mm from the midline
 # components/icons.tsx: Phosphor warning, question and shield-check (light), on their 256 grid.
 ICONS = {
     "alert": "M235.07 189.09L147.61 37.22a22.75 22.75 0 0 0-39.22 0L20.93 189.09a21.53 21.53 0 0 0 0 21.72A22.35 22.35 0 0 0 40.55 222h174.9a22.35 22.35 0 0 0 19.6-11.19a21.53 21.53 0 0 0 .02-21.72m-10.41 15.71a10.46 10.46 0 0 1-9.21 5.2H40.55a10.46 10.46 0 0 1-9.21-5.2a9.51 9.51 0 0 1 0-9.72l87.45-151.87a10.75 10.75 0 0 1 18.42 0l87.46 151.87a9.51 9.51 0 0 1-.01 9.72M122 144v-40a6 6 0 0 1 12 0v40a6 6 0 0 1-12 0m16 36a10 10 0 1 1-10-10a10 10 0 0 1 10 10",
@@ -291,12 +292,12 @@ def map_png(grid, result: dict | None = None, width_px: int = 1080) -> bytes:
             cx += px + 2 * dot
         cx = _text(d, (cx, base), p, 400, px, TEXT, tracking=-0.02)
 
-    # From above, centred, with L and R beside it where the Scan tab puts them (x = -0.98 and 0.98, mid-height);
+    # From above, centred, with L and R beside it where the Scan tab puts them (LR_MM, mid-height);
     # under it the left and right sides, each named, spaced evenly between the header and the caption.
     try:
         views, tex = _cortex(), _texture(grid)
         brains = views and [(_brain_layer(tex, views[name], VIEWS[name][1] * k), at) for name, at in (
-            ("top", (w / 2, 552 * k)), ("left", (w / 2 - 248 * k, 1020 * k)), ("right", (w / 2 + 248 * k, 1020 * k)))]
+            ("top", (w / 2, 548 * k)), ("left", (w / 2 - 248 * k, 1015 * k)), ("right", (w / 2 + 248 * k, 1015 * k)))]
     except Exception:  # noqa: BLE001 - an unexpected grid must not stop the image
         brains = None
     small = dict(weight=500, px=round(24 * k), fill=MUTED, anchor="m")
@@ -304,8 +305,8 @@ def map_png(grid, result: dict | None = None, width_px: int = 1080) -> bytes:
         for (layer, origin), at in brains:
             out.paste(layer, (round(at[0] - origin[0]), round(at[1] - origin[1])), layer)
         scale, (cx, cy) = VIEWS["top"][1] * k, brains[0][1]
-        _text(d, (cx - 0.98 * scale, cy + 8 * k), "L", **small)
-        _text(d, (cx + 0.98 * scale, cy + 8 * k), "R", **small)
+        _text(d, (cx - LR_MM * scale, cy + 8 * k), "L", **small)
+        _text(d, (cx + LR_MM * scale, cy + 8 * k), "R", **small)
         _text(d, (w / 2 - 248 * k, 1226 * k), "Left side", **small)
         _text(d, (w / 2 + 248 * k, 1226 * k), "Right side", **small)
     else:  # no baked cortex: the heat inside the head outline, from above only
