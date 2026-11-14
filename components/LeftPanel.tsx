@@ -66,6 +66,7 @@ export function LeftPanel() {
   const tab = useDash((s) => s.tab);
   const spotsDone = useDash((s) => s.spots.filter((p) => p.state === "done").length);
   const simsDone = useDash((s) => s.sims.filter((p) => p.status === "done").length);
+  const simsTotal = useDash((s) => s.sims.length);
   const host = useRef<HTMLDivElement>(null);
   const tabs = useRef<Record<TabId, HTMLButtonElement | null>>({ scan: null, simulations: null });
   const [d, setD] = useState("");
@@ -109,7 +110,7 @@ export function LeftPanel() {
         <TabButton
           id="simulations"
           label="Simulations"
-          count={`${simsDone}/24`}
+          count={`${simsDone}/${simsTotal}`}
           active={tab === "simulations"}
           onRef={(el) => (tabs.current.simulations = el)}
         />

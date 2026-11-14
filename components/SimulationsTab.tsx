@@ -114,7 +114,8 @@ function SimCard({ sim, best }: { sim: Simulation; best: boolean }) {
     <motion.li
       layout="position"
       transition={{ layout: { duration: 0.5, ease: EASE_UI } }}
-      className={`glass flex flex-col gap-3 p-3 transition-[border-color,opacity] duration-300 ${best ? "!border-primary" : "dim"} ${
+      // Off-screen cards skip rendering: a live run fills the grid with about a hundred.
+      className={`glass flex flex-col gap-3 p-3 transition-[border-color,opacity] duration-300 [contain-intrinsic-size:auto_136px] [content-visibility:auto] ${best ? "!border-primary" : "dim"} ${
         sim.status === "queued" ? "opacity-60" : ""
       }`}
     >

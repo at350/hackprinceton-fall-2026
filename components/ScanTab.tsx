@@ -3,6 +3,8 @@
 import { AnimatePresence, motion } from "motion/react";
 import type { ScanSpot, ScanUpdate } from "@/lib/types";
 import { useDash } from "@/lib/useDash";
+import { LIVE } from "@/lib/live";
+import { BrainView } from "./BrainView";
 import { InteractiveBrainView } from "./InteractiveBrainView";
 import { IconClock, Ring } from "./icons";
 import { EASE_ENTER, EASE_MASK, SCAN_STATUS } from "./ui";
@@ -37,7 +39,11 @@ function Verdict({ scan }: { scan: ScanUpdate | null }) {
 function Summary({ scan, done }: { scan: ScanUpdate | null; done: number }) {
   const parts: string[] = !scan
     ? ["Place the device on spot 1 to begin"]
-    : scan.status === "clear"
+    : scan.status === "pending"
+      ? ["Result appears once you approve it"]
+      : scan.status === "rejected"
+        ? ["You rejected the proposed result"]
+      : scan.status === "clear"
       ? [`Nothing in ${done} of 8 spots`, `${Math.round(scan.confidence * 100)}% confidence`]
       : [
           scan.region,
@@ -59,7 +65,7 @@ function Summary({ scan, done }: { scan: ScanUpdate | null; done: number }) {
           {parts.map((p, i) => (
             <span key={i} className="flex items-center gap-2.5">
               {i > 0 && <span className="size-1 rounded-full bg-muted opacity-50" />}
-              <span className={scan ? "text-text" : "text-muted"}>{p}</span>
+              <span className={scan && scan.status !== "pending" && scan.status !== "rejected" ? "text-text" : "text-muted"}>{p}</span>
             </span>
           ))}
         </motion.p>
@@ -108,7 +114,11 @@ export function ScanTab() {
 
       <div className="mt-2 min-h-0 flex-1" style={{ containerType: "size" }}>
         <div className="flex size-full items-center justify-center">
-          <InteractiveBrainView scan={scan} spots={spots} current={current} run={run} />
+          {/* Live maps remain 2D until the backend supplies a 3D bleed descriptor.
+              Choose by mode, before any live data arrives; never show demo heat. */}
+          {LIVE
+            ? <BrainView scan={scan} spots={spots} current={current} run={run} />
+            : <InteractiveBrainView scan={scan} spots={spots} current={current} run={run} />}
         </div>
       </div>
     </div>

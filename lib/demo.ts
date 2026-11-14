@@ -1,4 +1,5 @@
 import { DEMO_LENGTH_MS, SAMPLE_RATE_HZ } from "./config";
+import { type LiveStore, type Timeline, live } from "./live";
 import {
   REGIONS,
   deviceBuffer,
@@ -38,7 +39,7 @@ const SLOTS = [0, 1, 2, 3, 4, 5, 5, 6, 7];
 const SCAN_END = SCAN_AT + (SLOTS.length - 1) * SLOT_MS + DWELL_MS;
 
 /** Story milestones, for views that show timing (the agent trace). */
-export const TIMELINE = {
+export const TIMELINE: Timeline = {
   connectedAt: CONNECTED_AT,
   scanAt: SCAN_AT,
   firstMapAt: SCAN_AT + DWELL_MS,
@@ -152,6 +153,7 @@ const nextId = (p: string) => `${p}-${++uid}`;
 
 export class DemoStore {
   state: DashState = initialState();
+  timeline = TIMELINE;
   private listeners = new Set<() => void>();
   private events: StoryEvent[] = buildStory();
   private applied = 0;
@@ -440,15 +442,24 @@ function buildStory(): StoryEvent[] {
   at(APPROVAL_AT, (s) => {
     s.step("todo-approve", { state: "running" });
     s.say(COPY.ask);
-    s.set({ approval: { id: nextId("approval"), action: "Send pre-alert to trauma center", state: "pending" } });
+    s.set({
+      approval: {
+        id: nextId("approval"),
+        action: "Send pre-alert to trauma center",
+        title: "Send pre-alert to the trauma center?",
+        detail: "Includes the map, best fit (epidural, L temporal, 22 mL) and the scan log.",
+        state: "pending",
+      },
+    });
     s.startHold();
   });
 
   return ev.sort((a, b) => a.at - b.at);
 }
 
-// One store per browser tab.
-export const demo = typeof window !== "undefined" ? new DemoStore() : (null as unknown as DemoStore);
+// One store per browser tab: the scripted story, or the live agent run (see lib/live.ts).
+export const demo: DemoStore | LiveStore =
+  typeof window !== "undefined" ? live ?? new DemoStore() : (null as unknown as DemoStore);
 if (typeof window !== "undefined" && process.env.NODE_ENV !== "production") {
-  (window as unknown as { __demo: DemoStore }).__demo = demo;
+  (window as unknown as { __demo: DemoStore | LiveStore }).__demo = demo;
 }

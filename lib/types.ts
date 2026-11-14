@@ -16,7 +16,9 @@ export type DeviceStatus = "disconnected" | "connecting" | "connected" | "scanni
 
 // ---- Scan -----------------------------------------------------------------
 
-export type ScanStatus = "bleed" | "uncertain" | "clear";
+// "pending": the agent has a scan but the medic has not approved a result yet (live mode).
+// "rejected": the medic turned the proposed result down, so none is recorded (live mode).
+export type ScanStatus = "bleed" | "uncertain" | "clear" | "pending" | "rejected";
 
 /** Sent when a scan spot finishes. `map` is cumulative over all finished spots. */
 export interface ScanUpdate {
@@ -74,6 +76,7 @@ export interface AgentStep {
   label: string;
   detail?: string;
   state: StepState;
+  parent?: string; // id of the to-do a tool call belongs to
 }
 
 export interface ChatMessage {
@@ -86,6 +89,8 @@ export interface ChatMessage {
 export interface ApprovalRequest {
   id: string;
   action: string;
+  title?: string; // card heading
+  detail?: string; // one line under it
   state: "pending" | "approved" | "rejected";
 }
 
