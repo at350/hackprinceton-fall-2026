@@ -198,7 +198,7 @@ The bridge answers roster texts in code, sends anyone without an open hand-off (
 | Store namespace, key | Value |
 |---|---|
 | `lucid/oncall`, handle | `{handle, space_id, agent_user_id, since, active}` |
-| `lucid/handoffs`, thread id | `{thread_id, patient_id, to, space_id, agent_user_id, sent_at, message, report, status, messages: [{id, kind, status}], reply, call, simulated}`. `status` is sent, delivered, failed or no_one_on_call (read is allowed, but Photon's beta reports no read status); a message's status is queued, delivered or failed. `reply` is `{decision, note, at, via}`. `call` is `{status, started_at, conversation_id, summary, duration_s}`, with status ringing, answered, no_answer, failed or cancelled. A failed send adds `error`; the bridge adds `delivered_at`, `clinician_at` and `no_reply_at`. A re-scan update appends `{id, kind: "update", status}` to the accepted record's `messages`; a re-scan on a new thread also gets its own record with `update_of` = the accepted thread |
+| `lucid/handoffs`, thread id | `{thread_id, patient_id, to, space_id, agent_user_id, sent_at, message, report, status, messages: [{id, kind, status}], reply, call, simulated}`. `status` is sent, delivered, failed or no_one_on_call (read is allowed, but Photon's beta reports no read status); a message's status is queued, delivered or failed. `reply` is `{decision, note, at, via}`. `call` is `{status, started_at, conversation_id, summary, duration_s}`, with status ringing, answered, no_answer, failed or cancelled. A failed send adds `error`; the bridge adds `delivered_at`, `clinician_at` and `no_reply_at`. The record also carries `transport`; after a call, `call` has `answered_at` and `ended_at`, and the code-built recap (or "I tried to call") is in `messages` with `kind: "recap"`. A re-scan update appends `{id, kind: "update", status}` to the accepted record's `messages`; a re-scan on a new thread also gets its own record with `update_of` = the accepted thread |
 | `lucid/bridge`, `cursor` | `{since, handled: {message id: createdAt}}`, so a restart neither replays nor skips |
 
 On the thread, the bridge's messages are human messages tagged `[Receiving clinician, iMessage] ...`, `[Receiving clinician, phone call] ...` or `[Hand-off channel] ...`, and every run it starts carries metadata `{"source": "photon-bridge", "kind": "clinician" | "call" | "channel"}`. Answers to a channel event go to the medic only.
@@ -240,12 +240,14 @@ Everything is in `lucid/config.py`, except the hand-off's variables, which are l
 | `LUCID_REGION_MODEL` | `anthropic:claude-haiku-5-5` | Region agents and the skeptic |
 | `MIN_FIT`, `MIN_MARGIN` | 0.80, 0.05 | The decision rule |
 | `COARSE_VOLUMES` | 10, 20, 30, 40 mL | The sweep the region agents refine from |
+| `LUCID_UNIT`, `LUCID_ETA_MIN`, `LUCID_ORIGIN` | Medic 12, 12, on scene, en route | The simulated transport: which unit has the patient and how far out. In the scan, `/scan.json`, the pre-alert, the hand-off record and the call |
 | `LUCID_SIM_PACE_S` | 0.03 | The lookup table answers instantly; simulation events are spaced by this much so a person can watch the grid fill |
 
 Extended thinking is switched off: every step is a short tool turn, and thinking added 5 to 8 seconds to each.
 
 ## Honest limits
 
+- The transport (unit, ETA, origin) is simulated from `lucid/config.py`, like the device. No dispatch or GPS link.
 - No hardware. `read_scan` serves three mock scans: `temporal_bleed`, `clear`, `uncertain`. The re-scan returns cleaner mock readings for the spots the medic was asked to redo.
 - The head model is a coarse 2D proxy. pyEIT solves an electrical-impedance forward problem; we map its boundary voltages to a coil signal in dB and add a simple NIR absorption term. It is not a validated solver for the device.
 - One bleed per hypothesis. Volumes are good to about 5 mL at best; neighbouring volumes often tie.

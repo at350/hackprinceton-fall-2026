@@ -19,12 +19,23 @@ ENV = ROOT / '.env'
 load_dotenv(ENV)
 CARTESIA = 'https://api.cartesia.ai'
 PHOTON = 'https://api.photon.codes'
-INSTRUCTIONS = '''You are Lucid, an automated screening aid calling the on-call clinician with a pre-alert approved by a medic. Read the pre-alert in two sentences. Answer questions only using the report and evidence below; plainly say when the scan cannot show something. Ask whether the clinician accepts or declines the patient. Never provide treatment advice or claim a diagnosis. Keep turns short. After the decision, say a text recap follows, then end the call.
-Patient: {{patient_id}}
+INSTRUCTIONS = '''You are Lucid, an automated screening aid calling an on-call clinician about a pre-alert approved by a medic. The initial message gives the finding and the supplied transport details, then asks whether they accept or decline the patient. Speak like a person on a radio. Keep answers to one short sentence, use no filler or thanks, and do not repeat the opening.
+
+When interrupted, stop speaking, listen and respond to what was asked. Questions, objections, "wait", and "no" followed by a question are NOT refusals to talk: answer them, even if the clinician says no or is hostile. When in doubt, answer the question. For location and ETA, give the transport details below. If asked where the patient is, provide the available unit and ETA; if no precise location is given, say the exact location is unavailable. For a known fact, answer directly in one sentence and stop speaking; do not ask accept-or-decline again in that response. For ETA, just state the transport and ETA without any question. If a requested fact is not provided, such as the destination bay, patient name, vitals or mechanism of injury, say: "I don't have that. The medic will radio it. Can you accept pending that, or do you decline?" Never invent a fact or claim it is in a message if it is not. If the caller is hostile, stay level and offer an accept-or-decline choice or the option to decide by text; do not hang up unless the person refuses to talk or hangs up.
+
+Only when the person actually refuses to talk at all, says they cannot talk, not now, stop calling, or says this is the wrong person or number: stop, do not read or repeat clinical details, say exactly "Understood. The details are in your messages; reply ACCEPT or DECLINE there.", and end the call. A refusal to talk is not a patient decline; the end-call reason must say "no decision given".
+
+Only an explicit acceptance or decline of the patient is a decision. Answer only from the approved report, evidence and transport below. Never claim a diagnosis: describe what the screening scan suggests. Do not say "not a diagnosis", "confirm with CT", or a similar disclaimer unless asked whether it is a diagnosis. Never give treatment advice. When the clinician explicitly accepts or declines the patient, immediately invoke the end_call tool and say exactly "Text recap follows." as the tool's pre-action speech. Do not ask whether they are still there or repeat clinical details; invoking end_call is mandatory.
+Patient ID, only if asked: {{patient_id}}
 Approved pre-alert: {{message}}
 Approved report: {{report}}
-Evidence: {{evidence}}'''
-INITIAL = 'This is Lucid, an automated screening aid, calling with a pre-alert from a medic. Do you have thirty seconds?'
+Evidence: {{evidence}}
+Transport: {{transport}}'''
+INITIAL = 'This is Lucid, an automated screening aid, with a pre-alert a medic approved. {{voice_prealert}} {{transport}} Do you accept or decline the patient?'
+AGENT_CONFIG = {'instructions': INSTRUCTIONS, 'initial_message': INITIAL,
+                'initial_message_interruptions': 'allow',
+                'audio': {'output': {'speed': 1.30}},
+                'system_tools': {'end_call': {'pre_tool_speech': 'force', 'description': 'Immediately end after the clinician makes an explicit patient decision or refuses to talk. For a decision, say Text recap follows. For refusal, say the exact refusal sentence from the instructions. The tool must be invoked, not just described.'}}}
 
 
 def enabled() -> bool:
@@ -45,7 +56,37 @@ def _request(client, method, path, **kwargs):
     return response.json() if response.content else None
 
 
+def _voice_prealert(message):
+    """Condense the approved finding without inventing details or reading log fields."""
+    message = str(message or "")
+    sentences = re.split(r"(?<=[.!?])\s+|[\r\n]+", message)
+    finding_text = next((part for part in sentences if re.search(r"\bbleed\b", part, re.I)), "")
+    if finding_text and not re.search(r"\b(?:no|not|without|negative|absence|ruled out|unlikely)\b.{0,50}\bbleed\b", finding_text, re.I | re.S):
+        kind = re.search(r"\b(epidural|subdural|intraparenchymal)\b", finding_text, re.I)
+        side = re.search(r"\b(left|right)\b", finding_text, re.I)
+        region = re.search(r"\b(temporal|frontal|parietal|occipital)\b", finding_text, re.I)
+        qualifier = re.search(r"\b(likely|possible|suspected)\b", finding_text, re.I)
+        size = re.search(r"\b(\d+(?:\.\d+)?)\s*(?:mL|millilit(?:er|re)s?)\b", finding_text, re.I)
+        parts = [m.group(1).lower() for m in (qualifier, side, region, kind) if m]
+        description = " ".join([*parts, "bleed"])
+        article = "an" if description[0] in "aeiou" else "a"
+        finding = f"The scan suggests {article} {description}"
+        if size:
+            finding += f", about {size.group(1)} millilitres"
+        return finding + "."
+    # For unusual reports preserve only a short finding, never IDs, times or scoring fields.
+    text = re.sub(r"(?i)\bscreening aid\s*[,;:-]?\s*not a diagnosis\.?", "", message)
+    for part in re.split(r"(?<=[.!?])\s+|[\r\n]+", text):
+        if re.search(r"\b(?:diagnos\w*|CT|accept|declin\w*|reply|fit|range|patient|scan taken)\b|\d{4}-\d\d-\d\d", part, re.I):
+            continue
+        if part.strip() and not re.fullmatch(r"(?:Lucid\s+)?pre-?alert\s*[:.,-]?", part.strip(), re.I):
+            return part.strip()
+    return "Please review the pre-alert in your messages."
+
+
 def place_call(to_number, variables):
+    variables = {**variables, 'voice_prealert': _voice_prealert(variables.get('message')),
+                 'transport': str(variables.get('transport') or 'Transport location and ETA are not available.')}
     with _cartesia() as client:
         result = _request(client, 'POST', '/agents/calls', json={
             'agent_id': os.environ['CARTESIA_AGENT_ID'],
@@ -63,17 +104,26 @@ def _result(call):
     transcript = call.get('transcript') or []
     # Only the clinician's own words count. Ambiguous or conflicting words stay undecided.
     matches = []
-    negated = False
     for turn in transcript:
         if turn.get('role') != 'user':
             continue
         text = turn.get('text') or ''
-        for m in re.finditer(r'\b(accept(?:ed|ing)?|declin(?:e|ed|ing))\b', text, re.I):
-            if re.search(r"\b(not|no|never|don'?t|doesn'?t|can'?t|cannot|won'?t|unable to)\s+(\w+\s+)?$", text[:m.start()], re.I):
-                negated = True
-            matches.append(('accept' if m.group().lower().startswith('accept') else 'decline', text))
+        # Keep a later explicit decision even if the same turn began with a question or conditional.
+        for clause in re.split(r"(?<=[.!?])\s+|,\s*(?:but|however)\s+", text, flags=re.I):
+            words = list(re.finditer(r'\b(accept(?:ed|ing)?|declin(?:e|ed|ing))\b', clause, re.I))
+            if '?' in clause or re.search(r"\b(?:before|if|whether|until)\b", clause, re.I):
+                continue
+            valid = []
+            for m in words:
+                if re.search(r"\b(not|no|never|don'?t|doesn'?t|can'?t|cannot|won'?t|unable to)\s+(\w+\s+)?$", clause[:m.start()], re.I):
+                    continue
+                if re.match(r"\s+(?:to\s+(?:talk|speak|listen|hear|continue)|(?:this|the|your)\s+(?:call|conversation))\b", clause[m.end():], re.I):
+                    continue
+                valid.append(('accept' if m.group().lower().startswith('accept') else 'decline', text))
+            if len({d for d, _ in valid}) == 1:
+                matches.extend(valid)
     decisions = {m[0] for m in matches}
-    decision = next(iter(decisions)) if len(decisions) == 1 and not negated else 'none'
+    decision = next(iter(decisions)) if len(decisions) == 1 else 'none'
     note = next((text for d, text in reversed(matches) if d == decision), '')
     duration = None
     if call.get('start_time') and call.get('end_time'):
@@ -81,8 +131,10 @@ def _result(call):
             duration = max(0, (datetime.fromisoformat(call['end_time'].replace('Z', '+00:00')) - datetime.fromisoformat(call['start_time'].replace('Z', '+00:00'))).total_seconds())
         except (ValueError, TypeError):
             pass
-    return {'answered': bool(transcript), 'duration_s': duration, 'decision': decision, 'note': note,
-            'summary': call.get('summary') or '', 'transcript': transcript}
+    # Cartesia may conflate refusing the call with declining the patient.
+    summary = 'No decision was given on the call.' if decision == 'none' else (call.get('summary') or '')
+    return {'answered': bool(transcript), 'answered_at': call.get('start_time') if transcript else None, 'ended_at': call.get('end_time'), 'duration_s': duration, 'decision': decision, 'note': note,
+            'summary': summary, 'transcript': transcript}
 
 
 def wait_for_call(call_id, timeout_s=240):
@@ -124,10 +176,18 @@ def _ensure_agent(c):
                 break
             page = result['next_page']
         model = min((x for x in models if x.get('average_latency_ms') is not None), key=lambda x: x['average_latency_ms'])['id']
-        agent = _request(c, 'POST', '/v1/agents', json={'name': 'Lucid pre-alert', 'config': {'instructions': INSTRUCTIONS, 'initial_message': INITIAL, 'model': {'id': model}, 'system_tools': {'end_call': {}}, 'speculative_generation': True}})
+        agent = _request(c, 'POST', '/v1/agents', json={'name': 'Lucid pre-alert', 'config': {**AGENT_CONFIG, 'model': {'id': model}, 'speculative_generation': True}})
         agent_id = agent['id']
         _save_once('CARTESIA_AGENT_ID', agent_id)
         print('Cartesia model:', model)
+    else:
+        agent = _request(c, 'GET', '/v1/agents/' + agent_id)
+        config = agent.get('config') or {}
+        end_call = (config.get('system_tools') or {}).get('end_call') or {}
+        if (config.get('instructions') != INSTRUCTIONS or config.get('initial_message') != INITIAL
+                or config.get('initial_message_interruptions') != 'allow' or end_call != AGENT_CONFIG['system_tools']['end_call']
+                or ((config.get('audio') or {}).get('output') or {}).get('speed') != 1.30):
+            _request(c, 'PATCH', '/v1/agents/' + agent_id, json={'config': AGENT_CONFIG})
     print('Cartesia agent:', agent_id)
     return agent_id
 
@@ -215,7 +275,7 @@ def main():
     else:
         if not args.number:
             parser.error('call requires a destination number')
-        call_id = place_call(args.number, {'patient_id': 'demo-patient', 'message': 'A screening scan suggests a possible temporal bleed. Please accept or decline this pre-alert.', 'report': 'Screening suggests a possible temporal bleed; this is not a diagnosis.', 'evidence': 'Simulated scan; no validated diagnosis.'})
+        call_id = place_call(args.number, {'patient_id': 'demo-patient', 'message': 'A screening scan suggests a possible temporal bleed.', 'report': 'Screening suggests a possible temporal bleed.', 'evidence': 'Simulated scan; no validated diagnosis.'})
         print('Call ID:', call_id)
         print(json.dumps(wait_for_call(call_id), indent=2))
 

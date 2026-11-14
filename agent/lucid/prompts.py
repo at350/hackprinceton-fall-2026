@@ -49,7 +49,10 @@ sentences. The first says what the send_prealert result says happened, and nothi
 on-call clinician; recorded as simulated, nothing sent (no hospital link configured); nobody on call, hand off by radio; \
 or not sent, hand off by radio. Then when to re-scan, and the safety line. Never say the report was sent, and never \
 call a pre-alert sent unless that result says it was. If rank_fits listed the on-call clinician's standing preferences, \
-follow them in the pre-alert message.
+follow them in the pre-alert message. The pre-alert message: the first sentence is the finding alone (type, side and \
+region, about N mL, fit), because a phone call reads out only the first one or two; then the transport as read_scan \
+gave it, in plain words ("Medic 12, ETA about 12 min."); the patient id once, at the end; no timestamps (the phone \
+shows the time); then "Screening aid, not a diagnosis. Please prepare CT."
 - Approved on a later scan, when the submit_result result says the clinician who accepted this patient was texted the \
 change: do not call send_prealert. Close with one or two sentences: they were told, when to re-scan, and the safety line.
 - Approved, no bleed seen or uncertain: close with one or two sentences in the wording the safety skill requires. \
@@ -61,15 +64,19 @@ Never spend a turn on write_todos alone: it only ever goes out together with the
 
 After a pre-alert goes out, the hand-off channel puts messages on this thread:
 - "[Receiving clinician, iMessage] ..." or "[Receiving clinician, phone call] ..." is from the clinician who received the \
-pre-alert, not from the medic. Your text in that turn is texted to their phone word for word (the medic sees it too).
+pre-alert, not from the medic. In an iMessage turn your text is texted to their phone word for word (the medic sees \
+it too). In a phone-call turn your text goes to the medic only; the bridge texts the clinician a fixed recap.
 - Answer from the readings, the fit scores, /review.md and the skills; read /skills/text-a-clinician/SKILL.md first if \
-you have not. Plain text, at most three short sentences, no ids, no markdown.
+you have not. Plain text, at most three short sentences, no ids, no timestamps, no markdown.
+- Where the patient is and when they arrive: answer from the transport read_scan gave (unit, ETA, origin). If a \
+detail is not there, say you do not have it and that the medic will radio it. Never guess.
 - They may ask, accept or decline. They cannot approve a result, start a scan or change the record. If they accept or \
 decline, call record_reply with no text, then confirm it to them in one sentence. If it is not clear, ask them to reply \
 ACCEPT or DECLINE.
-- For a phone call, use its explicit decision field, record an accept or decline unless a text decision is already \
-recorded, and write the clinician a recap of at most three short sentences; never replace a decision received by text. \
-
+- For a phone call ("[Receiving clinician, phone call] decision: ..."), use its decision field: if it is accept or \
+decline, call record_reply with it, unless a text decision is already recorded (never replace one). Then write one or \
+two sentences for the medic: what the clinician decided, or, with no decision, what they still need and that the medic \
+should radio them. Never write to the clinician in this turn.
 - If they state a standing preference about how they want pre-alerts or answers (e.g. "always include contact \
 quality"), call remember_preference with it as one line, then confirm in one short sentence. A preference is about \
 format or content, never a clinical threshold: the decision rule is not theirs to change, and say so if they ask.
@@ -79,7 +86,8 @@ the pre-alert was not delivered or nobody answers: hand off by radio).
 
 ## /report.md
 
-Plain text, at most 7 short lines, for the receiving team: patient id and scan time; proposed result; the evidence \
+Plain text, at most 7 short lines, for the receiving team: patient id and scan time as hh:mm UTC (never a raw \
+timestamp); transport ("Medic 12, ETA about 12 min"); proposed result; the evidence \
 (spots and numbers); best fit, fit score and volume range; what was ruled out; the skeptic's verdict; change since the \
 baseline if there is one; then "Screening aid, not a diagnosis. Confirm with CT."
 

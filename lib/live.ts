@@ -261,7 +261,8 @@ export class LiveStore {
   private pendingStart: ScanCase | null = null;
   private lastCase: ScanCase = "temporal_bleed";
   // One patient per page load: a second run is a re-scan against the saved baseline.
-  private patientId = `patient-${Math.random().toString(36).slice(2, 8)}`;
+  // Reads as "Patient P-7K3Q" in the texts and on the call.
+  private patientId = `P-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
   private bridge: LiveBridgeHandle | null = null;
 
   // Latest wire data, and the refs already applied from `values`.

@@ -218,7 +218,8 @@ async def on_no_reply(record: dict, lg) -> None:
         await run_on_thread(lg, thread_id, tagged(CHANNEL_TAG, f"No reply after {call_after_s():.0f} s. Calling the on-call clinician."), "channel")
         state = await lg.threads.get_state(thread_id)
         variables = {"report": str(current.get("report") or ""), "message": str(current.get("message") or ""),
-                     "patient_id": str(current.get("patient_id") or ""), "evidence": _evidence(state.get("values") or {})}
+                     "patient_id": str(current.get("patient_id") or ""), "evidence": _evidence(state.get("values") or {}),
+                     "transport": photon.spoken_transport(current.get("transport"))}
         # A decision may have arrived while the thread was busy with the channel event.
         fresh = await update_record(lg, thread_id, lambda rec: rec)
         if not fresh or fresh.get("reply"):
@@ -236,21 +237,60 @@ async def on_no_reply(record: dict, lg) -> None:
         log.warning("call for %s failed (%s)", thread_id, type(exc).__name__)
         outcome = None
 
+    times = call_times(outcome)
     if outcome and outcome.get("answered"):
-        await update_record(lg, thread_id, lambda rec: _call_change(rec, status="answered", summary=outcome.get("summary") or "", duration_s=outcome.get("duration_s")))
-        content = tagged(CALL_TAG, f"decision: {outcome.get('decision', 'none')}. Summary: {outcome.get('summary') or ''} Transcript: {json.dumps(outcome.get('transcript') or [])}")
-        recap = await run_on_thread(lg, thread_id, content, "call")
+        await update_record(lg, thread_id, lambda rec: _call_change(rec, status="answered", summary=outcome.get("summary") or "", duration_s=outcome.get("duration_s"), **times))
+        spoken = [{'role': turn['role'], 'text': turn['text']} for turn in outcome.get('transcript') or [] if turn.get('role') in ('user', 'assistant') and turn.get('text')]
+        content = tagged(CALL_TAG, f"decision: {outcome.get('decision', 'none')}. Summary: {outcome.get('summary') or ''} Transcript: {json.dumps(spoken)}")
+        await run_on_thread(lg, thread_id, content, "call")  # the lead's text is for the medic's chat only
+        fresh = await update_record(lg, thread_id, lambda rec: rec) or current
+        recap = call_recap(fresh, started)
         if recap:
-            await send_to_clinician(current, recap, f"call-recap:{call_id}")
+            await _send_logged(lg, fresh, recap, f"call-recap:{call_id}")
     else:
         status = "no_answer" if outcome is not None else "failed"
-        fresh = await update_record(lg, thread_id, lambda rec: _call_change(rec, status=status, summary="", duration_s=(outcome or {}).get("duration_s")))
+        fresh = await update_record(lg, thread_id, lambda rec: _call_change(rec, status=status, summary="", duration_s=(outcome or {}).get("duration_s"), **times))
         await run_on_thread(lg, thread_id, tagged(CHANNEL_TAG, "The call was not answered."), "channel")
         # Avoid asking for a decision again when a text decision already arrived.
         fresh = await update_record(lg, thread_id, lambda rec: rec) or fresh
         if fresh and not fresh.get("reply"):
             when = _at(started).astimezone().strftime("%-I:%M %p %Z")
-            await send_to_clinician(fresh, f"I tried to call at {when} about a pre-alert. Reply ACCEPT or DECLINE.", f"call-no-answer:{call_id or thread_id}")
+            await _send_logged(lg, fresh, f"I tried to call at {when} about a pre-alert. Reply ACCEPT or DECLINE.", f"call-no-answer:{call_id or thread_id}")
+
+
+def call_times(outcome: dict | None) -> dict:
+    """`answered_at` and `ended_at` for the record: from the voice module when it gives them, else ended = now and
+    answered = ended minus the call's duration."""
+    if outcome is None:
+        return {"ended_at": _iso(_now())}
+    ended = outcome.get("ended_at") or _iso(_now())
+    duration = outcome.get("duration_s")
+    answered = outcome.get("answered_at") or (_iso(_at(ended) - timedelta(seconds=duration)) if outcome.get("answered") and duration else None)
+    return {"ended_at": ended, **({"answered_at": answered} if answered else {})}
+
+
+def call_recap(record: dict, called_at: str) -> str | None:
+    """What the clinician is texted after an answered call, built from the record, never from the model's words.
+    None when they decided by text meanwhile: that decision stands and needs no recap."""
+    reply, patient = record.get("reply") or {}, record.get("patient_id")
+    if reply and reply.get("via") != "call":
+        return None
+    if reply.get("decision") not in ("accept", "decline"):
+        return f"No decision was recorded on our call about patient {patient}. Reply ACCEPT or DECLINE here when you can."
+    when = _at(called_at).astimezone().strftime("%-I:%M %p %Z")
+    text = f"From our call at {when}: you {reply['decision']}{'ed' if reply['decision'] == 'accept' else 'd'} patient {patient}. The medic has been told."
+    if reply["decision"] == "accept":
+        text += " I will text you if a re-scan changes anything."
+    note = (reply.get("note") or "").strip().rstrip(".")
+    return text + (f" Noted: {note}." if note else "")
+
+
+async def _send_logged(lg, record: dict, text: str, key: str) -> None:
+    """Text the clinician after a call and list the text in the record's messages, so its delivery is followed."""
+    mid = await send_to_clinician(record, text, key)
+    if mid:
+        message = {"id": mid, "kind": "recap", "status": "queued"}
+        await update_record(lg, record["thread_id"], lambda rec: {**rec, "messages": [*(rec.get("messages") or []), message]})
 
 
 # ---- The loop --------------------------------------------------------------

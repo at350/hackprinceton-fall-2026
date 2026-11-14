@@ -31,6 +31,7 @@ SAFETY_LINE = "Screening aid, not a diagnosis. Confirm with CT."
 REPLY_LINE = "Reply ACCEPT or DECLINE, or ask me about the scan."
 # The model ends a pre-alert the way the safety skill says; the canonical line replaces it.
 _TRAILING_SAFETY = re.compile(r"\s*screening aid,? not a diagnosis\.?\s*(?:(?:please prepare|confirm with) (?:a )?ct\.?)?\s*$", re.I)
+_ETA = re.compile(r"\bETA\b|\bmin(?:ute)?s? (?:out|away)\b|\barriv(?:al|ing|es)\b", re.I)
 _LEADING_PREALERT = re.compile(r"^\s*(?:lucid )?pre-?alert\b[\s,:.\-]*", re.I)  # the header says it
 
 _RETRY_STATUS = {429, 502, 503, 504}
@@ -91,10 +92,23 @@ def multipart(data: bytes, filename: str, content_type: str = "image/png") -> tu
     return body, f"multipart/related; boundary={boundary}"  # Photon refuses any other parameter (e.g. type=)
 
 
-def prealert_text(message: str, patient_id: str) -> str:
-    """The pre-alert as sent: who it is from and for which patient (id, never a name), the model's text, the safety line, how to reply."""
+def transport_line(transport: dict | None) -> str:
+    """The transport for a text: "Medic 12, ETA about 12 min (on scene, en route)."."""
+    return f"{transport['unit']}, ETA about {transport['eta_min']} min ({transport['origin']})." if transport else ""
+
+
+def spoken_transport(transport: dict | None) -> str:
+    """The transport for a phone call: "Medic 12, about 12 minutes out"."""
+    return f"{transport['unit']}, about {transport['eta_min']} minutes out" if transport else ""
+
+
+def prealert_text(message: str, patient_id: str, transport: dict | None = None) -> str:
+    """The pre-alert as sent: who it is from and for which patient (id, never a name), the model's text, where the patient
+    is and when they arrive (added if the model left the ETA out), the safety line, how to reply."""
     body = _LEADING_PREALERT.sub("", _TRAILING_SAFETY.sub("", message.strip())).strip()
     body = body[:1].upper() + body[1:]
+    if transport and not _ETA.search(body):
+        body += f"\n{transport_line(transport)}"
     head = "Lucid pre-alert" + ("" if patient_id in body else f", patient {patient_id}")
     return f"{head}\n{body}\n{SAFETY_LINE}\n\n{REPLY_LINE}"
 
