@@ -3,10 +3,9 @@
 import { motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { drawDimBrain, loadBrain, renderScanned } from "@/lib/brain";
-import { HEAD } from "@/lib/mock";
 import type { RegionAgent, Simulation } from "@/lib/types";
 import { useDash } from "@/lib/useDash";
-import { IconCheck, IconClock, IconTarget, Ring, Spinner } from "./icons";
+import { IconCheck, IconClock, IconTarget, Ring } from "./icons";
 import { EASE_EXPO } from "./ui";
 
 const TYPE_LABEL = { epidural: "Epidural", subdural: "Subdural", intraparenchymal: "Intraparenchymal" };
@@ -65,28 +64,16 @@ function Thumb({ sim }: { sim: Simulation }) {
     top.current!.getContext("2d")!.drawImage(renderScanned(sim.map, size, false), 0, 0);
   }, [loaded, sim.map]);
 
-  const opacity = sim.status === "done" ? 1 : sim.status === "running" ? 0.15 + 0.85 * sim.progress : 0;
+  // The heat appears only when the run is done: a partial fade would imply a
+  // partial result the solver doesn't produce. Progress lives in the bar below.
   return (
     <div className="relative aspect-square w-[clamp(56px,5.2vw,76px)] shrink-0">
       <canvas ref={base} className="absolute inset-0 size-full" />
-      <canvas ref={top} className="absolute inset-0 size-full" style={{ opacity, transition: "opacity 300ms linear" }} />
-      {sim.status === "running" && (
-        // Progress traced around the brain outline, starting at the front.
-        <svg viewBox="-1.1 -1.1 2.2 2.2" className="absolute inset-0 size-full -rotate-90" aria-hidden>
-          <ellipse rx={HEAD.ry * 1.06} ry={HEAD.rx * 1.06} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={0.035} />
-          <ellipse
-            rx={HEAD.ry * 1.06}
-            ry={HEAD.rx * 1.06}
-            fill="none"
-            stroke="var(--primary)"
-            strokeWidth={0.035}
-            strokeLinecap="round"
-            pathLength={1}
-            strokeDasharray="1 1"
-            strokeDashoffset={1 - sim.progress}
-          />
-        </svg>
-      )}
+      <canvas
+        ref={top}
+        className="absolute inset-0 size-full"
+        style={{ opacity: sim.status === "done" ? 1 : 0, transition: "opacity 400ms cubic-bezier(0.23,1,0.32,1)" }}
+      />
     </div>
   );
 }
@@ -97,7 +84,7 @@ function SimCard({ sim, best }: { sim: Simulation; best: boolean }) {
     : sim.status === "done"
       ? { text: "Done", el: <IconCheck size={12} strokeWidth={1.8} />, color: "var(--muted)" }
       : sim.status === "running"
-        ? { text: `Running ${Math.round(sim.progress * 100)}%`, el: <Spinner size={12} />, color: "var(--primary)" }
+        ? { text: "Running", el: null, color: "var(--primary)" }
         : { text: "Queued", el: <IconClock size={12} strokeWidth={1.8} />, color: "var(--muted)" };
   return (
     <motion.li
@@ -120,19 +107,28 @@ function SimCard({ sim, best }: { sim: Simulation; best: boolean }) {
           </span>
         </div>
       </div>
+      {/* One bar per card (Vercel Geist progress): run progress while running, fit score once done. */}
       <div className="flex items-center gap-3">
         <div className="h-[3px] flex-1 overflow-hidden rounded-full bg-[rgba(255,255,255,0.08)]">
-          <motion.div
-            className="h-full rounded-full"
-            style={{ background: best ? "var(--primary)" : "var(--text)" }}
-            initial={{ width: 0 }}
-            animate={{ width: sim.status === "done" ? `${sim.score * 100}%` : "0%" }}
-            transition={{ duration: 0.8, ease: EASE_EXPO }}
-          />
+          {sim.status === "running" ? (
+            <div className="h-full rounded-full bg-primary" style={{ width: `${sim.progress * 100}%`, transition: "width 300ms linear" }} />
+          ) : (
+            <motion.div
+              className="h-full rounded-full"
+              style={{ background: best ? "var(--primary)" : "var(--text)" }}
+              initial={{ width: 0 }}
+              animate={{ width: sim.status === "done" ? `${sim.score * 100}%` : "0%" }}
+              transition={{ duration: 0.8, ease: EASE_EXPO }}
+            />
+          )}
         </div>
-        <span className="w-12 text-right text-[22px] font-medium leading-none tracking-[-0.04em] text-text" title="Fit score">
-          {sim.status === "done" ? sim.score.toFixed(2) : "--"}
-        </span>
+        {sim.status === "running" ? (
+          <span className="w-12 text-right text-[14px] font-medium leading-none text-primary">{Math.round(sim.progress * 100)}%</span>
+        ) : (
+          <span className="w-12 text-right text-[22px] font-medium leading-none tracking-[-0.04em] text-text" title="Fit score">
+            {sim.status === "done" ? sim.score.toFixed(2) : "--"}
+          </span>
+        )}
       </div>
     </motion.li>
   );
