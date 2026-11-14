@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { demo } from "@/lib/demo";
 import type { AgentStep, ChatMessage } from "@/lib/types";
 import { useDash } from "@/lib/useDash";
-import { IconArrowUp, IconCheck, IconHand, IconTool, IconX, Spinner } from "./icons";
+import { IconArrowUp, IconCheck, IconTool, IconX, Spinner } from "./icons";
 
 // Beautiful UI motion.
 const EASE_UI = [0.23, 1, 0.32, 1] as const;
@@ -19,11 +19,30 @@ const PARENT: Record<string, string> = {
   "tool-alert": "todo-approve",
 };
 
-function DotGrid() {
+// Waiting: the grid settles into a pause shape (outer columns lit).
+const PAUSE = new Set([0, 2, 3, 5, 6, 8]);
+
+/** One status glyph for every state: animates while working, holds a pattern otherwise. */
+function DotGrid({ mode }: { mode: "working" | "waiting" | "idle" }) {
   return (
-    <span className="dot-grid text-primary" aria-hidden>
+    <span
+      className="dot-grid transition-colors duration-300"
+      style={{ color: mode === "idle" ? "var(--muted)" : "var(--primary)" }}
+      aria-hidden
+    >
       {Array.from({ length: 9 }, (_, i) => (
-        <span key={i} />
+        <span
+          key={i}
+          style={
+            mode === "working"
+              ? undefined
+              : {
+                  animation: "none",
+                  opacity: mode === "waiting" ? (PAUSE.has(i) ? 1 : 0.15) : 0.3,
+                  transition: "opacity 300ms cubic-bezier(0.23,1,0.32,1)",
+                }
+          }
+        />
       ))}
     </span>
   );
@@ -45,22 +64,16 @@ function StatusLine() {
 
   return (
     <div className="flex h-11 shrink-0 items-center gap-2.5 px-4">
+      <DotGrid mode={waiting ? "waiting" : busy ? "working" : "idle"} />
       {waiting ? (
-        <>
-          <IconHand size={15} className="text-primary" />
-          <span className="text-[13px] font-medium text-text">Waiting for your approval</span>
-        </>
+        <span className="text-[13px] font-medium text-text">Waiting for your approval</span>
       ) : busy ? (
         <>
-          <DotGrid />
           <span className="shimmer text-[13px] font-medium">{label}</span>
           <span className="ml-auto font-mono text-[12px] text-muted">{elapsed}s</span>
         </>
       ) : (
-        <>
-          <IconCheck size={14} className="text-muted" />
-          <span className="text-[13px] text-muted">{steps.length ? "Idle" : "Starts when the device connects"}</span>
-        </>
+        <span className="text-[13px] text-muted">{steps.length ? "Idle" : "Starts when the device connects"}</span>
       )}
     </div>
   );
