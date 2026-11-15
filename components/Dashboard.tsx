@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { live } from "@/lib/live";
+import { store } from "@/lib/store";
 import { useDash } from "@/lib/useDash";
 import { AgentPanel } from "./AgentPanel";
 import { Header } from "./Header";
@@ -16,9 +16,9 @@ export default function Dashboard() {
 
   useEffect(() => {
     // Dev aid for screenshots: ?view=trace opens the agent trace.
-    if (process.env.NODE_ENV !== "production" && new URLSearchParams(location.search).get("view") === "trace") live.setView("trace");
-    live.start();
-    return () => live.stop();
+    if (process.env.NODE_ENV !== "production" && new URLSearchParams(location.search).get("view") === "trace") store.setView("trace");
+    store.start();
+    return () => store.stop();
   }, []);
 
   return (

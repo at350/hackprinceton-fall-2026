@@ -1,15 +1,15 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { live } from "./live";
+import { store } from "./store";
 import type { DashState } from "./types";
 
 /** Subscribe to one slice of the dashboard state. The selector must return a stable reference. */
 export function useDash<T>(select: (s: DashState) => T): T {
   return useSyncExternalStore(
-    live.subscribe,
-    () => select(live.getState()),
-    () => select(live.getState()),
+    store.subscribe,
+    () => select(store.getState()),
+    () => select(store.getState()),
   );
 }
 

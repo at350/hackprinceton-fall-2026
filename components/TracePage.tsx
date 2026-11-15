@@ -3,7 +3,7 @@
 import { motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { drawDimBrain, loadBrain, renderScanned } from "@/lib/brain";
-import { live } from "@/lib/live";
+import { store } from "@/lib/store";
 import { pointAt } from "@/lib/mock";
 import type { TraceFold, TraceHero, TraceLog, TraceNode, TracePanel, TracePlanStep } from "@/lib/trace";
 import { deriveTrace } from "@/lib/trace";
@@ -274,7 +274,7 @@ function Actions() {
     <div className="-mt-2 flex gap-2">
       <button
         type="button"
-        onClick={() => live.resolveApproval(false)}
+        onClick={() => store.resolveApproval(false)}
         className="flex h-[34px] items-center gap-1.5 rounded-[10px] px-3.5 text-[13px] font-medium text-text transition-colors duration-100 hover:bg-raised active:scale-[0.97]"
       >
         <IconX size={13} />
@@ -282,7 +282,7 @@ function Actions() {
       </button>
       <button
         type="button"
-        onClick={() => live.resolveApproval(true)}
+        onClick={() => store.resolveApproval(true)}
         className="flex h-[34px] items-center gap-1.5 rounded-[10px] bg-primary px-4 text-[13px] font-semibold text-[#04141a] transition-transform duration-150 active:scale-[0.97]"
       >
         <IconCheck size={13} />

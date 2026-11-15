@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { devicePresence } from "@/lib/device";
 import { SCAN_CASES, type ScanCase, live } from "@/lib/live";
 import { MODES, modeDef, setMode, useMode } from "@/lib/mode";
+import { store } from "@/lib/store";
 import type { DeviceStatus, ViewId } from "@/lib/types";
 import { formatClock, useDash } from "@/lib/useDash";
 import { IconArrowRight, IconCheck, IconChevronDown, IconClock, IconDashboard, IconLink, IconPlug, IconWorkflow, Spinner } from "./icons";
@@ -190,7 +191,7 @@ function ViewSwitch() {
           type="button"
           role="tab"
           aria-selected={view === id}
-          onClick={() => live.setView(id)}
+          onClick={() => store.setView(id)}
           aria-label={label}
           title={label}
           className={`flex h-8 items-center gap-1.5 whitespace-nowrap rounded-[7px] px-3 text-[13px] font-medium transition-colors duration-150 ${

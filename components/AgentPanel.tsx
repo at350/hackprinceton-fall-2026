@@ -3,7 +3,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { type BadgeKey, type HandoffStep, type Tone, clockTime, handoffBadge, handoffSteps, lastFour } from "@/lib/handoff";
-import { live } from "@/lib/live";
+import { store } from "@/lib/store";
 import type { AgentStep, CallEntry, ChatMessage, Handoff } from "@/lib/types";
 import { useDash } from "@/lib/useDash";
 import {
@@ -470,7 +470,7 @@ function Approval() {
           <div className="mt-3 flex justify-end gap-2">
             <button
               type="button"
-              onClick={() => live.resolveApproval(false)}
+              onClick={() => store.resolveApproval(false)}
               className="flex h-10 items-center gap-1.5 rounded-[10px] px-4 text-[13.5px] font-medium text-text transition-colors duration-100 hover:bg-[rgba(255,255,255,0.06)] active:scale-[0.97]"
             >
               <IconX size={13} />
@@ -478,7 +478,7 @@ function Approval() {
             </button>
             <button
               type="button"
-              onClick={() => live.resolveApproval(true)}
+              onClick={() => store.resolveApproval(true)}
               className="flex h-10 items-center gap-1.5 rounded-[10px] bg-primary px-5 text-[13.5px] font-semibold text-[#04141a] transition-transform duration-150 active:scale-[0.97]"
             >
               <IconCheck size={13} strokeWidth={2.2} />
@@ -498,7 +498,7 @@ function Composer() {
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        live.sendMedic(text);
+        store.sendMedic(text);
         setText("");
       }}
       className="mx-3 mb-3 flex shrink-0 items-center gap-1.5 rounded-[14px] border border-[rgba(255,255,255,0.08)] bg-[rgba(0,0,0,0.22)] p-1.5 pl-3 transition-colors duration-150 focus-within:border-[rgba(255,255,255,0.18)]"

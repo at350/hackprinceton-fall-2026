@@ -1,5 +1,5 @@
 import { lastFour } from "./handoff";
-import { live } from "./live";
+import { store } from "./store";
 import type { AgentStep, DashState, Handoff, RegionName, ScanSpot, ScanStatus, Simulation, StepState } from "./types";
 
 // The agent run as a graph: the main pipeline left to right, and the triage
@@ -289,7 +289,7 @@ function plan(steps: AgentStep[], waiting: boolean): TraceFold | undefined {
 
 export function deriveTrace(s: DashState): Trace {
   const t = s.t;
-  const T = live.timeline;
+  const T = store.timeline;
   const spotsDone = s.spots.filter((p) => p.state === "done").length;
   const done = s.sims.filter((x) => x.status === "done");
   const simsDone = done.length;

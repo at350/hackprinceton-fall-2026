@@ -38,7 +38,7 @@ Switch with the menu under the device status, top left. The mode is remembered i
 
 **Device mode needs the device bridge, which is not built yet.** Until then it shows the no-device state: the status reads **No device**, the scan panel says **No device connected** with the reason ("No device bridge running"), **Run scan** is disabled (hovering it gives the reason), and the live data card shows empty charts and dashes. Device presence comes from `deviceStatus()` in `lib/device.ts`, a stub for the bridge to answer.
 
-Modes are defined once, in `MODES` in `lib/mode.ts`: an id, a label, a one-line description, `agent` (whether the real agent drives the dashboard) and `source` (`"mock"` or `"device"`). Adding a mode is one more entry there. The module also exports the current mode (`getMode`), `useMode`, `setMode` and `isAgentMode`. Switching to a mode with a different engine (`agent` differs) reloads the page, so `isAgentMode(getMode())` holds for a page load.
+Modes are defined once, in `MODES` in `lib/mode.ts`: an id, a label, a one-line description, `agent` (whether the real agent drives the dashboard) and `source` (`"mock"` or `"device"`). Adding a mode is one more entry there. The module also exports the current mode (`getMode`), `useMode`, `setMode` and `isAgentMode`. Switching to a mode with a different engine (`agent` differs) reloads the page, so `isAgentMode(getMode())` holds for a page load. The components read `store` from `lib/store.ts`, which is where an engine for a non-agent mode would be chosen; here it is always the live store.
 
 ## Running a scan
 
@@ -106,7 +106,8 @@ lib/
   mode.ts            the modes (Simulated device, Device): the list, the current mode, switching (tests: mode.test.mjs)
   device.ts          whether a mode has a device to scan with; deviceStatus() is the stub for the device bridge
   mock.ts            head geometry, scan spot names, region names, the simulated device's signal stream
-  live.ts            the dashboard store: maps agent state and stream events onto the dashboard state
+  store.ts           the store the components read (the live store)
+  live.ts            the live store: maps agent state and stream events onto the dashboard state
   trace.ts           derives the agent trace graph, run states and log from the dashboard state
   handoff.ts         the hand-off from thread state and Store record, its row badge and steps (tests: handoff.test.mjs)
   useDash.ts         React hook that subscribes to the store
