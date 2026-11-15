@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lucid evidence race</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="race.css">
+  <script type="importmap">
+    {"imports": {"three": "./vendor/three.module.js", "three/addons/": "./vendor/addons/"}}
+  </script>
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+        <circle cx="16" cy="16" r="13" fill="none" stroke="currentColor" stroke-width="1.6"/>
+        <path d="M3 16h7l3-6 4 12 3-6h9" fill="none" stroke="var(--ember)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      </svg>
+      <span>Lucid</span>
+    </div>
+    <nav class="views" aria-label="Views">
+      <a href="/">Live</a>
+      <a href="model.html">Model</a>
+      <a href="race.html" aria-current="page">Race</a>
+      <a href="outlook.html">What if</a>
+    </nav>
+    <p class="scan-label" id="scan-label">No scan running</p>
+    <form class="controls" id="controls">
+      <label class="field" id="scenario-field">
+        <span class="field-label">Head</span>
+        <select id="scenario"></select>
+      </label>
+      <label class="field">
+        <span class="field-label">Speed</span>
+        <select id="speed">
+          <option value="1">Real time</option>
+          <option value="2" selected>2× faster</option>
+          <option value="5">5× faster</option>
+        </select>
+      </label>
+      <button type="submit" id="start">Start scan</button>
+    </form>
+  </header>
+
+  <main class="race">
+    <section class="race-main">
+      <div class="race-head">
+        <div>
+          <h1 id="race-title">Simulated patients, scanned spot by spot</h1>
+          <p class="race-lede">Each line is one simulated patient run through the same pipeline as the probe: the chance of a bleed after each spot. Patients with a bleed are ember, healthy ones frost. Watch where they split, and watch each bleed light up in the head as the probe reaches it.</p>
+        </div>
+        <button type="button" id="replay" class="ghost">Run the race again</button>
+      </div>
+      <div class="race-filters" role="group" aria-label="Highlight bleeds">
+        <span class="race-filter-label">Highlight</span>
+        <div class="chips" id="size-chips">
+          <button type="button" data-size="all" aria-pressed="true">All sizes</button>
+          <button type="button" data-size="10-25">10–25 ml</button>
+          <button type="button" data-size="25-40">25–40 ml</button>
+          <button type="button" data-size="40-60">40–60 ml</button>
+        </div>
+        <div class="chips" id="kind-chips">
+          <button type="button" data-kind="all" aria-pressed="true">All types</button>
+          <button type="button" data-kind="subdural">Subdural</button>
+          <button type="button" data-kind="epidural">Epidural</button>
+          <button type="button" data-kind="intracerebral">Deep</button>
+        </div>
+      </div>
+      <div class="race-chart" id="race-chart">
+        <canvas id="race-canvas" aria-label="Chance of bleed after each spot, one line per simulated patient"></canvas>
+      </div>
+      <div class="legend race-legend">
+        <span><i class="dot ember"></i>Patient with a bleed</span>
+        <span><i class="dot frost"></i>Healthy patient</span>
+        <span><i class="live-swatch"></i>This scan, live</span>
+      </div>
+    </section>
+
+    <aside class="race-side">
+      <section class="race-3d-wrap">
+        <div class="race-3d"><canvas id="race-3d" aria-label="The simulated bleeds in a head, lighting up as the scan finds them"></canvas></div>
+        <div class="legend race-3d-key">
+          <span><i class="dot ember"></i>Bleed the scan has found</span>
+          <span><i class="dot ash"></i>Not found yet, or missed</span>
+          <span><i class="live-ring"></i>This scan's estimate</span>
+        </div>
+      </section>
+      <section>
+        <h2>After all ten spots</h2>
+        <div class="race-stats">
+          <div><span class="big" id="stat-caught">–</span><span class="race-stat-label" id="stat-caught-label">bleeds flagged on the right side</span></div>
+          <div><span class="big" id="stat-false">–</span><span class="race-stat-label" id="stat-false-label">healthy heads flagged</span></div>
+        </div>
+      </section>
+      <section>
+        <h2>Where they end up</h2>
+        <p class="sub">Final chance of bleed, one dot per patient.</p>
+        <div id="endpoint"></div>
+      </section>
+      <section>
+        <h2>Flagged, by bleed</h2>
+        <table class="race-table" id="breakdown">
+          <tbody></tbody>
+        </table>
+        <p class="sub">Deep bleeds and small ones under hair are where the probe is weakest.</p>
+      </section>
+      <section>
+        <h2>This scan</h2>
+        <p class="sub" id="live-text">Start a scan: it is drawn on top of the crowd as it happens.</p>
+      </section>
+    </aside>
+  </main>
+
+  <div class="tooltip" id="tooltip" role="tooltip" hidden></div>
+  <script type="module" src="race.js"></script>
+</body>
+</html>

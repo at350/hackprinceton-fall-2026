@@ -1,0 +1,5 @@
+numpy
+scipy
+pandas
+matplotlib  # only for plots
+pytest  # only for tests

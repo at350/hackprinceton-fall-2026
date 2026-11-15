@@ -1,0 +1,50 @@
+/* Race: one big chart of many patients on the left, what it adds up to on the right. */
+.race { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(320px, 1fr); gap: 1px; background: var(--line); min-height: calc(100vh - 70px); }
+.race > * { background: var(--ward); }
+.race-main { padding: 18px var(--gutter) 20px; display: flex; flex-direction: column; min-width: 0; }
+.race-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
+.race-head h1 { margin: 0; font: 600 26px/1.15 var(--num); letter-spacing: -0.01em; }
+.race-lede { margin: 6px 0 0; color: var(--ink-2); max-width: 70ch; }
+.ghost { background: transparent; border: 1px solid var(--line); color: var(--ink); border-radius: 6px; padding: 8px 14px; cursor: pointer; white-space: nowrap; }
+.ghost:hover { border-color: var(--ink-3); }
+.race-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 14px 0 8px; }
+.race-filter-label { font-size: 12px; color: var(--ink-3); }
+.chips { display: flex; flex-wrap: wrap; gap: 2px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 2px; }
+.chips button { background: transparent; border: 0; color: var(--ink-2); padding: 5px 10px; border-radius: 6px; font-size: 12px; cursor: pointer; }
+.chips button:hover { color: var(--ink); }
+.chips button[aria-pressed="true"] { background: var(--panel-2); color: var(--ink); }
+.race-chart { position: relative; flex: 1; min-height: 380px; }
+#race-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; }
+.race-legend { margin-top: 8px; }
+.live-swatch { display: inline-block; width: 18px; height: 3px; border-radius: 2px; background: var(--ink); }
+
+.race-side { display: flex; flex-direction: column; }
+.race-3d-wrap { padding: 0 !important; }
+.race-3d { position: relative; height: clamp(340px, 54vh, 600px); background: radial-gradient(ellipse at 50% 45%, #15233d 0%, var(--ward) 72%); }
+#race-3d { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
+.race-3d-key { padding: 8px var(--gutter) 12px; }
+.dot.ash { background: transparent; box-shadow: inset 0 0 0 1.5px #5a7396; }
+.live-ring { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--ink); }
+.race-side > section { padding: 16px var(--gutter); border-bottom: 1px solid var(--line); }
+.race-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 10px; }
+.race-stats > div { display: grid; gap: 4px; }
+.race-stats .big { font-size: 44px; }
+.race-stat-label { color: var(--ink-2); font-size: 13px; }
+#endpoint svg { display: block; width: 100%; overflow: visible; }
+#endpoint text { fill: var(--ink-3); font: 400 11px var(--num); }
+.race-table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; margin-top: 6px; }
+.race-table td { padding: 5px 4px; border-top: 1px solid var(--line); vertical-align: middle; }
+.race-table td:first-child { color: var(--ink-2); width: 34%; }
+.race-table td:last-child { text-align: right; color: var(--ink); width: 18%; }
+.race-table th { text-align: left; color: var(--ink-3); font-weight: 500; padding: 10px 4px 4px; font-size: 12px; }
+.race-table .meter { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.race-table .meter i { display: block; height: 100%; border-radius: 4px; background: var(--ember); }
+
+@media (max-width: 1080px) {
+  .race { grid-template-columns: minmax(0, 1fr); }
+  .race-chart { min-height: 340px; }
+}
+@media (max-width: 640px) {
+  .race-head { flex-direction: column; }
+  .race-head h1 { font-size: 21px; }
+}
