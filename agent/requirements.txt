@@ -7,3 +7,4 @@ pyeit>=1.2.4
 numpy
 scipy
 pyserial>=3.5
+pymongo>=4.10

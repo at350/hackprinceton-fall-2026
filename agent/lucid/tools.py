@@ -14,7 +14,7 @@ from langchain.tools import ToolRuntime, tool
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
-from lucid import photon, physics
+from lucid import atlas, photon, physics
 from lucid.backend import backend, baseline_path, notes_path
 from lucid.config import COARSE_VOLUMES, DEFAULT_PATIENT, DEFAULT_SCAN, ETA_MIN, MAX_HYPOTHESES, MAX_NEW_PER_CALL, MEDIC_NOTES, ORIGIN, SIM_PACE_S, UNIT
 from lucid.decision import decide, describe
@@ -28,6 +28,7 @@ REVIEW_FILE = "/review.md"
 REPORT_FILE = "/report.md"
 _BY_ID = {h["id"]: h for h in physics.all_hypotheses()}
 physics.lookup(next(iter(_BY_ID)))  # load the lookup table at import, not inside the event loop
+_archiving: set[asyncio.Task] = set()  # the loop keeps only weak references to tasks
 
 
 def _ids(raw: list[str]) -> list[str]:
@@ -604,7 +605,18 @@ async def submit_result(status: str, hypothesis_id: str, summary: str, runtime: 
     elif status == "bleed" and photon.enabled():
         # The pre-alert card is built without I/O, so the recipient is looked up now; the card and the send both use it.
         update["recipient"] = await _on_call(runtime)
+    _archive(runtime, result)
     return _reply(runtime, f"Medic approved. Recorded: {status}.{note}{told}", scan=scan, preview=None, **update)
+
+
+def _archive(runtime: ToolRuntime, result: dict) -> None:
+    """The approved case to the Atlas archive, in the background so the agent never waits on it. No map: it is dense, and rebuilt from type, region and volume."""
+    if not atlas.enabled():
+        return
+    doc = {"patient_id": _patient(runtime), "thread_id": runtime.config["configurable"]["thread_id"], **result, "reading": runtime.state.get("reading"), "archived_at": datetime.now(UTC)}
+    task = asyncio.create_task(atlas.archive_scan(doc))
+    _archiving.add(task)
+    task.add_done_callback(_archiving.discard)
 
 
 async def _on_call(runtime: ToolRuntime) -> dict | None:

@@ -29,6 +29,7 @@ Without the dashboard:
 .venv/bin/python tests/test_voice.py     # call requests, decisions from a transcript, polling
 .venv/bin/python tests/test_device.py        # the device bridge on synthetic streams: protocol, calibration, spot capture, HTTP
 .venv/bin/python tests/test_device_tools.py  # read_scan and request_rescan against a patched bridge
+.venv/bin/python tests/test_atlas.py     # the Atlas case archive, with the database stubbed
 ```
 
 None of them calls a model or the network.
@@ -245,6 +246,7 @@ Everything is in `lucid/config.py`, except the hand-off's variables, which are l
 | `LUCID_MEDIC_NOTES` | Male, about 40; ladder fall 25 min ago; GCS 13, pupils equal and reactive; BP 152/88, HR 96 | The simulated medic's notes: JSON with any of `age_sex`, `mechanism`, `gcs`, `pupils`, `bp`, `hr`, or one sentence. In the scan, `/scan.json`, `/report.md`, the hand-off record and the call; not in the pre-alert text |
 | `LUCID_UNIT`, `LUCID_ETA_MIN`, `LUCID_ORIGIN` | Medic 12, 12, on scene, en route | The simulated transport: which unit has the patient and how far out. In the scan, `/scan.json`, the pre-alert, the hand-off record and the call |
 | `LUCID_SIM_PACE_S` | 0.03 | The lookup table answers instantly; simulation events are spaced by this much so a person can watch the grid fill |
+| `MONGODB_ATLAS_URL` | unset | Optional case archive (`lucid/atlas.py`): each approved result, bleed, clear or uncertain, goes to MongoDB Atlas, `lucid.scans`, with the patient, thread, result and 8-spot reading (no map). Unset, nothing is archived; a failed write is logged and the scan goes on |
 
 Extended thinking is switched off: every step is a short tool turn, and thinking added 5 to 8 seconds to each.
 
@@ -272,6 +274,7 @@ agent/
     tools.py            the tools above
     decision.py         the decision rule
     photon.py           Photon iMessage over HTTP, the on-call roster
+    atlas.py            the optional case archive on MongoDB Atlas
     bridge.py           the long-running process between Photon and the scan threads
     voice.py            Cartesia calls over a Photon SIP trunk, and their setup
     state.py            state keys the dashboard reads
