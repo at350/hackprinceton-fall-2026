@@ -277,8 +277,6 @@ export class LiveStore {
   private handoffRecord: unknown = null;
   // A run this page did not start (the Photon bridge's) is streaming into the hook.
   private external = false;
-  // `wire` came from a thread-state read rather than the hook (see syncState).
-  private polled = false;
   private tags = new Map<string, Tagged | null>();
   // This run's thread, so a bridge that a hot reload remounted opens it again.
   // Read with `?? null`: a store kept across a hot reload has no value for a field added since.
@@ -353,7 +351,6 @@ export class LiveStore {
     this.handoffState = null;
     this.handoffRecord = null;
     this.external = false;
-    this.polled = false;
     this.threadId = null;
     this.busy = false;
     this.streaming = false;
@@ -432,9 +429,9 @@ export class LiveStore {
   /** The stream's current state; called on every stream update. */
   sync(run: number, snap: LiveSnapshot) {
     if (run !== this.state.run) return;
-    // A thread-state read beats an idle hook that never heard of the bridge's run.
-    if (this.polled && !snap.isLoading && (snap.messages?.length ?? 0) < this.wire.messages.length) return;
-    this.polled = false;
+    // A thread only grows. An idle hook with fewer messages is behind: one that never heard
+    // of the bridge's run (after a thread-state read), or one a hot reload just rebuilt.
+    if (!snap.isLoading && (snap.messages?.length ?? 0) < this.wire.messages.length) return;
     const v = snap.values ?? {};
     // Each field is applied only when the server sent a new copy of it.
     if (v.scan !== undefined && v.scan !== this.seen.scan) {
@@ -500,7 +497,6 @@ export class LiveStore {
     const values = state.values ?? {};
     const interrupts = (state.tasks ?? []).flatMap((t) => t.interrupts ?? []);
     this.sync(run, { values, messages: values.messages ?? [], interrupt: interrupts.length ? interrupts : undefined, isLoading: false, error: undefined });
-    this.polled = true;
   }
 
   /** The hand-off's Store record, read by the bridge every 2 s once the pre-alert has gone out. */
