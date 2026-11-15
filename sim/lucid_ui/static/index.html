@@ -70,6 +70,20 @@
         <div class="chart" id="p-chart"></div>
       </section>
 
+      <section class="gemini" id="gemini" aria-live="polite">
+        <div class="section-head">
+          <h2><svg class="gemini-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2c.6 5.3 4.7 9.4 10 10-5.3.6-9.4 4.7-10 10-.6-5.3-4.7-9.4-10-10 5.3-.6 9.4-4.7 10-10z"/></svg>Hand-off, by Gemini</h2>
+          <button type="button" class="link" id="gemini-write">Write it now</button>
+        </div>
+        <p class="sub" id="gemini-sub">Written when the scan finishes, from the numbers on this screen only.</p>
+        <div class="gemini-out" id="gemini-out" hidden></div>
+        <ol class="gemini-chat" id="gemini-chat"></ol>
+        <form class="gemini-ask" id="gemini-ask">
+          <input id="gemini-q" type="text" placeholder="Ask about this scan, e.g. why the right frontal spot?" aria-label="Ask Gemini about this scan" autocomplete="off">
+          <button type="submit">Ask</button>
+        </form>
+      </section>
+
       <section class="next">
         <h2>Next spot</h2>
         <p class="next-spot" id="next-spot">–</p>

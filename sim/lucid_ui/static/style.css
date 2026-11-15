@@ -109,6 +109,25 @@ select {
 .verdict.likely .big { color: var(--blood-3); }
 .verdict.possible .big { color: var(--warn); }
 
+/* Gemini read-out */
+.gemini-mark { width: 14px; height: 14px; fill: #8ab4f8; vertical-align: -2px; margin-right: 7px; }
+.gemini-out { white-space: pre-wrap; margin: 4px 0 10px; padding: 10px 12px; border-radius: 6px; background: var(--panel);
+  border: 1px solid var(--line); border-left: 2px solid #8ab4f8; color: var(--ink); max-width: 62ch; }
+.gemini-out.busy { color: var(--ink-3); }
+.gemini-out.error { border-left-color: var(--warn); color: var(--ink-2); }
+.gemini-out .model { display: block; margin-top: 6px; color: var(--ink-3); font-size: 11px; }
+.gemini-chat { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.gemini-chat li { white-space: pre-wrap; max-width: 62ch; }
+.gemini-chat li.q { color: var(--ink-2); }
+.gemini-chat li.q::before { content: "You: "; color: var(--ink-3); }
+.gemini-chat li.a { padding-left: 10px; border-left: 2px solid #8ab4f8; }
+.gemini-ask { display: flex; gap: 6px; margin-top: 10px; }
+.gemini-ask input { flex: 1; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; }
+.gemini-ask input::placeholder { color: var(--ink-3); }
+.gemini-ask button { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 7px 14px; cursor: pointer; }
+.gemini-ask button:hover { border-color: var(--ink-3); }
+.gemini-ask button:disabled { opacity: .5; cursor: default; }
+
 /* Next */
 .next-spot { margin: 6px 0 2px; font: 600 26px/1.1 var(--num); }
 .next-spot.attn { color: var(--warn); }

@@ -1,9 +1,12 @@
 import base64
 import json
+import threading
+
+import pytest
 
 from lucid_sim.hardware import DEFAULT_DETECTOR
 from lucid_ui.make_brain import load
-from lucid_ui.server import SCENARIOS, App
+from lucid_ui.server import SCENARIOS, App, _clean, sim_source
 
 
 def test_brain_fits_inside_the_skull():
@@ -64,3 +67,57 @@ def test_every_scenario_builds():
     for key in SCENARIOS:
         lines, medium, label, truth = sim_source(key, 0, 0.2)
         assert lines and medium in ("human", "phantom")
+
+
+def test_gemini_context_has_the_scan_numbers_not_the_drawing_arrays():
+    from lucid_ui import gemini
+    from lucid_ui.server import App, outlook_payload
+
+    app = App({"kind": "sim"}, DEFAULT_DETECTOR)
+    lines, medium, label, truth = sim_source("epidural", 3, 0.0)
+    app.runner._run(lines, 0, medium, label, truth, threading.Event())
+    u = app.runner.update
+    assert u["final"]
+    out = outlook_payload({}, app.runner.scan.location.summary)
+    ctx = gemini.scan_context(app.runner.hello, u, out, "simulated head")
+    text = json.dumps(_clean(ctx), allow_nan=False)
+    assert ctx["chance_of_bleed"] == u["p_bleed"] and ctx["progress"]["finished"]
+    assert "voxels" not in text and "cortex" not in text and "points" not in text
+    assert ctx["what_if_progression"]["lanes"][0]["volume_ml_at_end"]["mean"] > 0
+    assert len(text) < 30_000  # a prompt, not a data dump
+
+
+def test_gemini_call_and_model_fallback(monkeypatch):
+    import io
+    import urllib.error
+    from lucid_ui import gemini
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setenv("GEMINI_MODEL", "gone-model")
+    sent = []
+
+    def post(url, body):
+        sent.append((url, body))
+        if "gone-model" in url:
+            raise urllib.error.HTTPError(url, 404, "not found", {}, io.BytesIO(b"{}"))
+        return {"candidates": [{"content": {"parts": [{"text": "Finding: 97% chance of bleed."}]}}]}
+
+    monkeypatch.setattr(gemini, "_post", post)
+    monkeypatch.setattr(gemini, "_get", lambda url: {"models": [
+        {"name": "models/text-embedding-9", "supportedGenerationMethods": ["embedContent"]},
+        {"name": "models/gemini-9-flash", "supportedGenerationMethods": ["generateContent"]}]})
+    g = gemini.Gemini()
+    r = g.ask({"source": "simulated head"}, "Where is it?", [{"role": "model", "text": "earlier"}])
+    assert r == {"text": "Finding: 97% chance of bleed.", "model": "gemini-9-flash"}
+    body = sent[-1][1]
+    assert body["contents"][-1]["parts"][0]["text"] == "Where is it?"
+    assert body["contents"][-1]["role"] == "user"
+
+
+def test_gemini_without_a_key_says_how_to_turn_it_on(monkeypatch, tmp_path):
+    from lucid_ui import gemini
+
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setattr(gemini, "ENV_FILE", tmp_path / ".env")
+    with pytest.raises(gemini.GeminiError, match="GEMINI_API_KEY"):
+        gemini.Gemini().ask({}, None)

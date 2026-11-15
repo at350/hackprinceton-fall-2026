@@ -33,6 +33,7 @@ from lucid_sim.anatomy import DEFAULT_SPOTS, HEAD_RADIUS_MM
 from lucid_sim.hardware import COLUMNS, DEFAULT_DETECTOR, DETECTORS, parse_frame, to_units
 from lucid_sim.progression import FLAG_Z, GUIDE_MLS_MM, GUIDE_VOLUME_ML, PRESETS, Conditions, outlook
 
+from .gemini import Gemini, GeminiError, scan_context
 from .make_brain import OUT as BRAIN_PATH
 from .make_brain import load as load_brain
 
@@ -106,6 +107,8 @@ class Runner:
         self.thread: threading.Thread | None = None
         self.stop = threading.Event()
         self.scan: LiveScan | None = None
+        self.hello: dict | None = None  # the latest hello and update, for the Gemini read-out
+        self.update: dict | None = None
 
     def start(self, lines, *, speed: float, medium: str, label: str, truth: dict | None = None):
         self.stop.set()
@@ -120,14 +123,15 @@ class Runner:
         scan = LiveScan(calibration=Calibration(detector=self.detector), prior=PRIORS[medium], paint_blood=True)
         self.scan = scan
         self.hub.last.pop("update", None)
+        self.update = None
         spots = [{"id": s.id, "side": s.side, "region": s.region,
                   "pos": _round(s.direction * HEAD_RADIUS_MM, 2)} for s in DEFAULT_SPOTS]
-        self.hub.publish("hello", {"label": label, "medium": medium, "speed": speed, "plan": [s.id for s in scan.plan],
+        self.hello = {"label": label, "medium": medium, "speed": speed, "plan": [s.id for s in scan.plan],
                                    "spots": spots, "head_radius": HEAD_RADIUS_MM, "truth": truth,
                                    "prevalence": scan.prevalence, "n_sims": scan.n_sims,
                                    # What normal tissue reads, for "this region reads higher/lower than usual".
-                                   "tissue_sigma": scan.prior.tissue_sigma, "region_sd": scan.prior.region_sd},
-                         remember=True)
+                      "tissue_sigma": scan.prior.tissue_sigma, "region_sd": scan.prior.region_sd}
+        self.hub.publish("hello", self.hello, remember=True)
         air = deque(maxlen=800)  # recent coil levels: the top of them is the probe in air
         batch, last_flush, t0 = [], 0.0, time.monotonic()
         for line in lines:
@@ -147,12 +151,14 @@ class Runner:
                 self._send_frames(batch, air, scan)
                 batch, last_flush = [], now
             if update is not None:
-                self.hub.publish("update", self._payload(scan, update), remember=True)
+                self.update = self._payload(scan, update)
+                self.hub.publish("update", self.update, remember=True)
         if batch:
             self._send_frames(batch, air, scan)
         final = scan.finish()
         if final is not None and not stop.is_set():
-            self.hub.publish("update", self._payload(scan, final), remember=True)
+            self.update = self._payload(scan, final)
+            self.hub.publish("update", self.update, remember=True)
 
     def _send_frames(self, batch, air, scan):
         u = to_units(pd.DataFrame(batch, columns=list(COLUMNS)), self.detector)
@@ -262,6 +268,16 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json({"ok": True, "plan": [s.id for s in self.app.runner.scan.plan]})
         return super().do_GET()
 
+    def do_POST(self):
+        url = urlparse(self.path)
+        if url.path != "/api/gemini":
+            return self._json({"error": "not found"}, 404)
+        try:
+            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0) or 0)) or b"{}")
+        except json.JSONDecodeError:
+            return self._json({"error": "bad JSON"}, 400)
+        return self._json(*self.app.ask_gemini(body.get("question"), body.get("history")))
+
     def _events(self):
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
@@ -287,6 +303,21 @@ class App:
         self.source = source
         self.hub = Hub()
         self.runner = Runner(self.hub, detector)
+        self.gemini = Gemini()
+
+    def ask_gemini(self, question: str | None, history: list | None) -> tuple[dict, int]:
+        r = self.runner
+        outlook = None
+        if r.update and r.update.get("final") and r.scan is not None and r.scan.location is not None:
+            outlook = outlook_payload({}, r.scan.location.summary)
+            if outlook["start"]["source"] != "scan":
+                outlook = None  # nothing localized: no growth to forecast
+        source = {"sim": "simulated head", "replay": "recording", "serial": "live probe"}[self.source["kind"]]
+        context = _clean(scan_context(r.hello, r.update, outlook, source))
+        try:
+            return self.gemini.ask(context, question, history), 200
+        except GeminiError as e:
+            return {"error": str(e)}, 503
 
     def outlook(self, q: dict) -> dict:
         scan = self.runner.scan
@@ -321,8 +352,8 @@ def _hours(q: dict, key: str):
 
 
 def outlook_payload(q: dict, latest: dict | None) -> dict:
-    """Progression lanes for the What-if screen, starting from the request, else the latest scan, else a demo."""
-    side, region, volume, kind, source = "L", "temporal", 30.0, "subdural", "demo"
+    """Progression lanes for the What-if screen, starting from the request, else the latest scan, else an example."""
+    side, region, volume, kind, source = "L", "temporal", 30.0, "subdural", "example"
     if latest and latest.get("status") in ("localized", "weak") and latest.get("volume_ml"):
         side, region = latest["side"], latest["region"]
         volume = float(np.clip(latest["volume_ml"], 5, 120))

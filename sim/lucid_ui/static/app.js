@@ -2,6 +2,7 @@
 import { HeadScene } from './scene.js';
 import { ChanceChart, Ladder, Strip, tooltip } from './charts.js';
 import { setupControls, pct } from './controls.js';
+import { GeminiPanel } from './gemini.js';
 
 const $ = (id) => document.getElementById(id);
 const spotName = (id) => (id ? id.replace('-', ' ') : '');
@@ -23,6 +24,7 @@ const strips = {
 let state = { plan: [], done: [], retake: [], confirm: [], pairs: {}, status: null, final: false, focused: false };
 
 setupControls();
+const gemini = new GeminiPanel();
 $('truth').addEventListener('change', (e) => scene.showTruth(e.target.checked));
 $('ladder-table-toggle').addEventListener('click', (e) => {
   const table = $('ladder-table');
@@ -54,10 +56,11 @@ function hello(h) {
   for (const s of Object.values(strips)) s.reset();
   $('log').innerHTML = '';
   $('p-value').textContent = pct(h.prevalence);
-  $('verdict-text').textContent = `Before any reading, ${pct(h.prevalence)} is the assumed chance. Each finished left/right pair updates it.`;
+  $('verdict-text').textContent = `Before any reading, ${pct(h.prevalence)} is the starting chance. Each finished left/right pair updates it.`;
   document.querySelector('.verdict').className = 'verdict';
   setNext(h.plan[0], 'First spot of the scan.', false);
   renderTimeline();
+  gemini.reset();
 }
 
 function frames(f) {
@@ -131,6 +134,7 @@ function update(u) {
   }
   renderTimeline();
   log(u);
+  if (u.final) gemini.handoff();
 }
 
 function setNext(spot, why, attention) {
