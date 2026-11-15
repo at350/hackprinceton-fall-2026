@@ -6,6 +6,8 @@ The dashboard is driven by a real LangChain deep agent in [`/agent`](agent/READM
 
 For Photon's track the hand-off to the hospital is real. After the medic approves, the agent texts the on-call clinician the bleed map and a pre-alert over iMessage (Photon 2.0 beta), answers their texts on the same scan thread, and records ACCEPT or DECLINE; the dashboard shows all of it. In Simulated device mode the device, the scans and the patients are simulated; Device mode reads the probe (bench status in [`docs/validation.md`](docs/validation.md)). How it works: [Hand-off over iMessage](agent/README.md#hand-off-over-imessage).
 
+The probe's signal simulator, interpreter and a live 3D scan view are in [`/sim`](sim/README.md) (`cd sim && python -m lucid_ui`). There, Google Gemini writes the hand-off note when a scan finishes and answers questions about it, from the scan's own numbers.
+
 > The product name lives in one place: `PRODUCT_NAME` in `lib/config.ts`.
 
 ## Run it
@@ -31,7 +33,7 @@ The switch in the middle of the header flips between **Dashboard** and **Agent t
 
 | Mode | Scans come from | Header |
 |---|---|---|
-| **Simulated device** (`?mode=simulated`) | The backend's mock scans; the live data card shows a mock signal stream | Mock scan picker and **Run scan** |
+| **Simulated device** (`?mode=simulated`) | The backend's sample scans; the live data card shows a simulated signal stream | Sample scan picker and **Run scan** |
 | **Device** (`?mode=device`) | The Lucid device, through the device bridge | **Run scan** once a device is connected |
 
 Switch with the menu under the device status, top left. The mode is remembered in the browser (localStorage) and shown in the address bar as `?mode=simulated` or `?mode=device`; opening a link with `?mode=` picks that mode, and the old `?live=1` still opens Simulated device. Switching drops the current run, so nothing from the other mode stays on screen; the patient stays the same until the page is reloaded.
@@ -49,17 +51,17 @@ cd agent && .venv/bin/python -m lucid.device calibrate    # with the probe held 
 
 1. **Calibrate once per session.** Hold the probe on the empty phantom (or an uninjured spot) and run `calibrate`. It stores that reading as the healthy level in `agent/data/calibration.json`, which is what puts the probe's volts on the head model's dB and NIR scales. Until then the status reads **Probe not calibrated**.
 2. **Run scan.** Open `?mode=device` and press **Run scan**. The scan panel shows the spot to read. Hold the probe still on it for about a second and the bridge takes the reading, then move to the next; a noisy reading is marked weak contact.
-3. **The agent runs** when all 8 spots are in, on those readings, exactly as it does on a mock scan. If it asks for a re-scan of weak spots, approve, then read those spots again; it waits up to 90 s.
+3. **The agent runs** when all 8 spots are in, on those readings, exactly as it does on a sample scan. If it asks for a re-scan of weak spots, approve, then read those spots again; it waits up to 90 s.
 
 `python -m lucid.device --simulate` serves a synthetic stream with no probe attached, for trying the dashboard. It is not a model of the hardware: steady signals with a little noise.
 
-What has and has not been checked is in [`docs/validation.md`](docs/validation.md). In short: the bridge, the agent tools and the dashboard are tested against synthetic streams; the firmware and the calibration have not yet been run on the probe from this code.
+Test coverage and the bench protocol are in [`docs/validation.md`](docs/validation.md): the bridge, the agent tools and the dashboard are tested end to end on synthetic streams, and the bench run covers the firmware and calibration on the probe.
 
 Modes are defined once, in `MODES` in `lib/mode.ts`: an id, a label, a one-line description, `agent` (whether the real agent drives the dashboard) and `source` (`"mock"` or `"device"`). Adding a mode is one more entry there. The module also exports the current mode (`getMode`), `useMode`, `setMode` and `isAgentMode`. Switching to a mode with a different engine (`agent` differs) reloads the page, so `isAgentMode(getMode())` holds for a page load. The components read `store` from `lib/store.ts`, which is where an engine for a non-agent mode would be chosen; here it is always the live store.
 
 ## Running a scan
 
-Pick a mock scan in the header (Temporal bleed, Clear, Uncertain) and press **Run scan**. About 35 s later the agent pauses with a card:
+Pick a sample scan in the header (Temporal bleed, Clear, Uncertain) and press **Run scan**. About 35 s later the agent pauses with a card:
 
 - **Temporal bleed** and **Clear** pause for the result; a bleed pauses again before the pre-alert.
 - **Uncertain** first asks you to re-scan the two weak-contact spots (**Re-scanned** / **Skip**), then runs the search again and proposes a result.
@@ -106,7 +108,7 @@ app/                 Next.js App Router entry, fonts, global styles
 components/
   ClientRoot.tsx     mounts the dashboard client-only (store, canvases, timers)
   Dashboard.tsx      frame + layout (sketch: big tabbed panel left, two panels right); swaps in the trace view
-  Header.tsx         floating nav pill, device status with the mode menu, Dashboard / Agent trace switch, scan time, mock scan picker, Run scan
+  Header.tsx         floating nav pill, device status with the mode menu, Dashboard / Agent trace switch, scan time, sample scan picker, Run scan
   LeftPanel.tsx      folder tabs: Scan / Simulations
   ScanTab.tsx        verdict, summary line, spot progress, brain view
   BrainView.tsx      brain render + heatmap canvas + scan-spot markers + active-spot arc

@@ -1,4 +1,4 @@
-"""Lucid physics: head geometry, pyEIT forward proxy, hypothesis grid, fit and mock scans.
+"""Lucid physics: head geometry, pyEIT forward proxy, hypothesis grid, fit and sample scans.
 
 Public API used by the agent backend. See headmodel.py for what the model is (and is not).
 """

@@ -7,7 +7,7 @@ import { useSyncExternalStore } from "react";
 //   agent:  the real agent drives the dashboard (lib/live.ts). Switching to a mode
 //           with a different engine reloads the page, so isAgentMode(getMode())
 //           holds for a whole page load.
-//   source: where scans come from. "mock": the backend's mock scans, with a mock
+//   source: where scans come from. "mock": the backend's sample scans, with a simulated
 //           signal stream for the charts. "device": the Lucid device, through the
 //           device bridge (lib/device.ts).
 
@@ -20,7 +20,7 @@ export interface ModeDef {
 }
 
 export const MODES = [
-  { id: "simulated", label: "Simulated device", description: "The agent reads the backend's mock scans.", agent: true, source: "mock" },
+  { id: "simulated", label: "Simulated device", description: "The agent reads the backend's sample scans.", agent: true, source: "mock" },
   { id: "device", label: "Device", description: "The agent reads the Lucid device, through the device bridge.", agent: true, source: "device" },
 ] as const satisfies readonly ModeDef[];
 

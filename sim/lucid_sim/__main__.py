@@ -1,8 +1,8 @@
 """Command line: generate sessions to files, stream them live like the Arduino, or plot them.
 
-    python -m lucid_sim generate -o runs/demo.csv --bleed L-temporal --plot runs/demo.png
+    python -m lucid_sim generate -o runs/human_L_temporal.csv --bleed L-temporal --plot runs/human_L_temporal.png
     python -m lucid_sim stream --pty --medium phantom --bleed R-parietal --kind balloon --volume 100
-    python -m lucid_sim plot runs/demo.csv
+    python -m lucid_sim plot runs/human_L_temporal.csv
 """
 from __future__ import annotations
 

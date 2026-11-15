@@ -165,7 +165,7 @@ async function load(useForm) {
     ? `Starting point you set: ${Math.round(s.volume)} ml, ${where}`
     : s.source === 'scan'
     ? `Starting from the last scan: about ${Math.round(s.volume)} ml, ${where}`
-    : `Demo starting point: ${Math.round(s.volume)} ml, ${where} (run a scan to start from its result)`;
+    : `Example starting point: ${Math.round(s.volume)} ml, ${where} (run a scan to start from its result)`;
   for (const lane of lanes) lane.shownVol = -1;
   buildLaneLabels();
   charts.forEach((c) => c.draw());

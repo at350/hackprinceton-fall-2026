@@ -145,12 +145,12 @@ function ModeMenu() {
   );
 }
 
-/** Which mock scan the simulated device holds. Same segmented look as the view switch. */
+/** Which sample scan the simulated device holds. Same segmented look as the view switch. */
 function ScanPicker({ value, onChange }: { value: ScanCase; onChange: (id: ScanCase) => void }) {
   const segment = "h-8 items-center whitespace-nowrap rounded-[7px] px-3 text-[13px] font-medium transition-colors duration-150";
   const at = SCAN_CASES.findIndex((c) => c.id === value);
   return (
-    <div role="radiogroup" aria-label="Mock scan" className="flex shrink-0 gap-0.5 rounded-[10px] bg-[rgba(0,0,0,0.3)] p-1">
+    <div role="radiogroup" aria-label="Sample scan" className="flex shrink-0 gap-0.5 rounded-[10px] bg-[rgba(0,0,0,0.3)] p-1">
       {SCAN_CASES.map(({ id, label }) => (
         <button
           key={id}
@@ -166,7 +166,7 @@ function ScanPicker({ value, onChange }: { value: ScanCase; onChange: (id: ScanC
       {/* Narrow bar: one segment that steps through the cases. */}
       <button
         type="button"
-        title="Mock scan"
+        title="Sample scan"
         onClick={() => onChange(SCAN_CASES[(at + 1) % SCAN_CASES.length].id)}
         className={`flex @min-[1100px]:hidden ${segment} bg-[rgba(255,255,255,0.12)] text-text`}
       >

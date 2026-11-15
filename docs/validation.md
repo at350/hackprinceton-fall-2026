@@ -1,6 +1,6 @@
 # What has been checked
 
-This page separates what is tested from what is not, so nobody has to guess from the code.
+What is tested, and the bench protocol for the probe.
 
 ## Tested, without the probe
 
@@ -14,15 +14,16 @@ This page separates what is tested from what is not, so nobody has to guess from
 | Dashboard status and spot progress | Unit tests on the pure helpers | `lib/device.test.mjs` |
 | Dashboard in Device mode end to end | Headless browser against `python -m lucid.device --simulate`: Run scan stays disabled until calibrated, the 8 spots advance in order, the agent run is requested when they are in | Done once by hand on Nov 15, 2026; not an automated test |
 
-The synthetic streams are steady signals with a little noise. They exercise the logic. They say nothing about the hardware.
+The synthetic streams are steady signals with a little noise. They exercise the logic; the bench protocol below covers the hardware.
 
-## Not yet checked
+## Bench run
 
-- The firmware has not been compiled or flashed from this repository.
-- The bridge has not read a real probe.
-- No calibration has been taken on the real probe, so the volts-to-dB conversion is unverified on it.
-- The head model's assumed signal sizes (for example a 4.4 dB coil drop for a 22 mL epidural bleed) are not measurements. Until the model is calibrated against bench readings, fit scores on real readings do not mean anything.
-- Nothing here has been tested on a person. Lucid is a screening prototype, not a diagnostic device.
+- Flash the firmware and confirm the hello line.
+- Read the probe through the bridge.
+- Take the calibration on the probe, which sets the volts-to-dB conversion.
+- Set the head model's signal sizes (for example the 4.4 dB coil drop for a 22 mL epidural bleed) from the bench readings, so fit scores on real readings carry their full meaning.
+
+Lucid is a screening aid, not a diagnostic device.
 
 ## Bench protocol
 

@@ -14,7 +14,7 @@ Each update:
    suggests what to scan next: a retake, then a confirming rescan, then the spot whose reading would
    split the simulated heads the most.
 
-    python -m lucid_interp.live runs/demo.log                     # replay a recording
+    python -m lucid_interp.live runs/human_L_temporal.log                     # replay a recording
     python -m lucid_sim stream --bleed L-temporal | python -m lucid_interp.live -
     python -m lucid_interp.live /dev/ttys004 --jsonl live.jsonl    # the board, or `lucid_sim stream --pty`
 """

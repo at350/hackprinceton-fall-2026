@@ -5,7 +5,7 @@ import { PRODUCT_NAME } from "@/lib/config";
 import "./globals.css";
 import { CortexPreload } from "@/components/CortexPreload";
 
-// Switzer (Fontshare, ITF Free Font License), self-hosted so the demo works offline.
+// Switzer (Fontshare, ITF Free Font License), self-hosted so it works offline.
 const switzer = localFont({
   src: [
     { path: "./fonts/Switzer-400.woff2", weight: "400" },

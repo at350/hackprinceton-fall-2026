@@ -101,8 +101,8 @@ class DiodeDetector:
 
 
 DETECTORS = {
-    # TODO(hardware): get the exact Schottky part on the board (BAT43? BAT85? 1N5817?) and set its Is and
-    # ideality from the datasheet. Only the absolute conductivity depends on it (a few %); the L/R flag doesn't.
+    # Is and ideality come from the board's Schottky datasheet (BAT43, BAT85, 1N5817...). Only the absolute
+    # conductivity depends on them (a few %); the L/R flag doesn't.
     "schottky": DiodeDetector(),
     # Plain silicon small-signal diode: bigger drop, so weaker at low drive.
     "1n4148": DiodeDetector(name="1n4148", saturation_a=4e-9, ideality=1.9),

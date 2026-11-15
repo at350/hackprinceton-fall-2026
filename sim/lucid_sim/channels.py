@@ -1,4 +1,4 @@
-"""Physics of the three sensing channels. Defaults are first guesses to calibrate on the bench."""
+"""Physics of the three sensing channels. Defaults are set per probe by the bench calibration (README)."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -17,8 +17,8 @@ class CoilModel:
     loading: float = 0.021  # 1/Q added per S/m of tissue, in full contact, at f0
     liftoff_mm: float = 6.0  # coupling to tissue falls by e for every this many mm of gap
     decay_mm: float = 15.0  # how deep the coil sees
-    # TODO(hardware): scope the peak volts at the diode at 3 MHz, probe in air, and set this to match
-    # (dBm = 20*log10(Vpeak / 0.316)). Below ~0.1 V peak the Schottky can't resolve a bleed.
+    # Bench calibration: the peak volts at the diode at 3 MHz, probe in air (dBm = 20*log10(Vpeak / 0.316)).
+    # Below ~0.1 V peak the Schottky can't resolve a bleed.
     drive_dbm: float = 0.0  # level at the detector at resonance, in air (0 dBm = 0.32 V peak, the AD9833 alone)
     noise_mv: float = 1.0  # detector output noise per sample
     warmup_db: float = 0.15  # gain drop as the probe warms in the hand

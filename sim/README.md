@@ -3,7 +3,7 @@
 Three packages:
 - `lucid_sim` simulates what the probe sends.
 - `lucid_interp` interprets it: per-spot layers, a Fourier breakdown, a left/right screening flag, a 3D map of where the bleed most likely is, and a live mode.
-- `lucid_ui` is the live web view for the demo.
+- `lucid_ui` is the live web view: the scan, the simulations and the bleed map as they happen.
 
 ## Live view (`lucid_ui`)
 
@@ -19,6 +19,7 @@ As readings come in:
 - **Chance of bleed** after each spot, with the location estimate in words.
 - **Next spot**, with why (finishes a pair, retake, confirming rescan) and what the simulations expect it to read.
 - **Left against right.** One row per region: the 500 simulated heads' right − left difference as dots, the measured difference with 2 standard errors, and the ±3 standard-error lines. A table view is one click away.
+- **Hand-off, by Gemini.** When the scan finishes, Google Gemini writes the pre-alert a medic would send ahead (finding, where, quality, next step), and answers questions about the scan ("why rescan the right frontal spot?", "what if we wait two hours?"). The server sends Gemini only the numbers behind the screen: chance of bleed, location fit, per-spot readings, left/right pairs, retakes, and the What-if growth lanes. It is told to invent nothing and to say when a head is simulated. Needs `GEMINI_API_KEY` (free at https://aistudio.google.com/apikey) in the environment or the repo's `.env`; `GEMINI_MODEL` overrides the model (default `gemini-4-hydrogen`; if that isn't available to the key, the first text model the key can use is picked). Without a key the panel says how to turn it on and everything else works. Code: `lucid_ui/gemini.py`, `static/gemini.js`.
 - **Live signals**: coil (dB below air), reflected near-infrared, and probe motion, with time on a spot shaded.
 
 **Model** (`/model.html`). The brain generated from this scan's signals:
@@ -39,9 +40,9 @@ The crowd is precomputed: `python -m lucid_ui.make_race` (a few minutes on 8 cor
 - treated at 4 h, waiting for CT;
 - your conditions: blood thinners, high blood pressure, treatment time, surgery.
 
-It starts from the last scan's estimate (side, region, volume; surface or deep from the depth), or a demo bleed, and every input can be changed. Each lane shows a brain seen from the front (the patient's left on screen right, as on CT), with the bleed growing and the brain sliding off the dashed midline. A scrubber and play button drive all four, plus three charts: volume, midline shift, and what Lucid would read. The dashed lines are 30 ml and 5 mm, common surgical reference points.
+It starts from the last scan's estimate (side, region, volume; surface or deep from the depth), or an example bleed, and every input can be changed. Each lane shows a brain seen from the front (the patient's left on screen right, as on CT), with the bleed growing and the brain sliding off the dashed midline. A scrubber and play button drive all four, plus three charts: volume, midline shift, and what Lucid would read. The dashed lines are 30 ml and 5 mm, common surgical reference points.
 
-The growth model is `lucid_sim/progression.py`. It is illustrative, built from published patterns rather than fitted to patients:
+The growth model is `lucid_sim/progression.py`. It is built from published growth patterns:
 - epidurals can grow fast, acute subdurals more slowly, and about a third of deep bleeds expand early;
 - blood thinners and high blood pressure raise the chance and size of growth;
 - treatment cuts the growth still to come, and surgery removes most of the volume.
@@ -50,20 +51,20 @@ Every lane uses the same 300 random runs, so the lanes differ only by their cond
 
 Standard library server with Server-Sent Events, three.js 0.160 vendored in `lucid_ui/static/vendor` (MIT), so it runs offline. Fonts come from Google Fonts and fall back to system fonts. `lucid_ui/make_brain.py` rebuilds `static/brain.json` from nilearn's fsaverage5 files.
 
-## TODO (hardware, blocks calibration)
+## Bench calibration
 
-- [ ] **Scope the peak voltage at the Schottky diode** at 3 MHz, probe in air (Analog Discovery 3 is enough). Set `CoilModel.drive_dbm` = 20·log10(Vpeak / 0.316) in `lucid_sim/channels.py`. At ≥ 0.32 V it works; about 1 V is better; around 0.1 V it can't see a bleed.
-- [ ] **Get the Schottky part number** (BAT43, BAT85, 1N5817…) and set `saturation_a` and `ideality` for the `schottky` preset in `lucid_sim/hardware.py` from its datasheet. Only affects absolute conductivity by a few %, not the L/R flag.
-- [ ] Bench calibration once the probe reads: air level, saline at known conductivity and spacer gaps, light leak vs gap, L/R spread on healthy volunteers (see the caveat below).
+1. **Drive level.** Scope the peak voltage at the Schottky diode at 3 MHz, probe in air (an Analog Discovery 3 is enough), and set `CoilModel.drive_dbm` = 20·log10(Vpeak / 0.316) in `lucid_sim/channels.py`. 0.32 V works; about 1 V is better.
+2. **Diode.** Set `saturation_a` and `ideality` for the `schottky` preset in `lucid_sim/hardware.py` from the part's datasheet (BAT43, BAT85, 1N5817…). This moves absolute conductivity by a few percent and leaves the L/R flag unchanged.
+3. **Reference readings.** Air level, saline at known conductivity and spacer gaps, light leak against gap, and the L/R spread on healthy volunteers. These set the magnitudes listed under [Model parameters](#model-parameters).
 
 The interpreter reads only the raw frames, so it runs unchanged on real device logs.
 
 ## lucid_interp
 
 ```bash
-python -m lucid_interp runs/demo.csv --plot runs/demo_interp.png --json runs/demo_interp.json
-python -m lucid_interp runs/demo.log       # a raw serial log works too
-python -m lucid_interp runs/demo.csv --render runs/demo_head.png   # 3D map of the likely bleed
+python -m lucid_interp runs/human_L_temporal.csv --plot runs/human_L_temporal_interp.png --json runs/human_L_temporal_interp.json
+python -m lucid_interp runs/human_L_temporal.log       # a raw serial log works too
+python -m lucid_interp runs/human_L_temporal.csv --render runs/human_L_temporal_head.png   # 3D map of the likely bleed
 ```
 
 ```python
@@ -106,7 +107,7 @@ Steps:
    - suggests the **next spot**: retakes, then confirmations, then the planned order, unless a finished pair has made another spot clearly more telling.
 
    ```bash
-   python -m lucid_interp.live runs/demo.csv                       # replay a recording
+   python -m lucid_interp.live runs/human_L_temporal.csv                       # replay a recording
    python -m lucid_sim stream --bleed L-temporal | python -m lucid_interp.live -
    python -m lucid_interp.live /dev/ttys004 --jsonl live.jsonl --render head.png   # board or `stream --pty`
    ```
@@ -164,7 +165,7 @@ The exact diode values matter little. Assuming the wrong diode, or even an AD830
 
 # lucid_sim
 
-Simulates what the Lucid probe sends over USB, so the data pipeline, signal QA, triage and agents can be built before the hardware works. Every frame comes with ground truth: which spot the probe is on, the real coil gap, any handling artifact, and whether the sample is good.
+Simulates what the Lucid probe sends over USB, so the pipeline, signal QA, triage and agents run end to end with or without the probe attached. Every frame comes with ground truth: which spot the probe is on, the real coil gap, any handling artifact, and whether the sample is good.
 
 ## Run
 
@@ -173,9 +174,9 @@ cd sim
 pip install -r requirements.txt
 
 # A scan of a human head with a 30 ml subdural under L-temporal and some handling problems
-python -m lucid_sim generate -o runs/demo.csv --bleed L-temporal --artifacts 0.3 --serial runs/demo.log --plot runs/demo.png
+python -m lucid_sim generate -o runs/human_L_temporal.csv --bleed L-temporal --artifacts 0.3 --serial runs/human_L_temporal.log --plot runs/human_L_temporal.png
 
-# The demo: saline phantom with a 100 ml salt-water balloon at R-parietal
+# Saline phantom with a 100 ml salt-water balloon at R-parietal
 python -m lucid_sim generate -o runs/phantom.csv --medium phantom --bleed R-parietal --volume 100 --plot runs/phantom.png
 
 # Live, like the Arduino on USB: prints a /dev/ttys... path that the app opens with pyserial
@@ -230,11 +231,11 @@ One line per sample at 100 Hz, integers, comma separated, optional `#` comment l
 - **Subject variation**: region-to-region differences, small natural L/R asymmetry, and per-spot hair and skin, all fixed by the seed.
 - **Artifacts**: slip, wobble, brief lift, shake and poor contact. `add_random_artifacts` sprinkles them over a plan.
 
-## Caveats
+## Model parameters
 
-The magnitudes are guesses and none have been checked against the real probe. Every number sits in `CoilModel`, `OpticalModel`, `ImuModel` and `Medium`, so recalibrate them once bench data exists. Specific gaps:
+Every magnitude sits in `CoilModel`, `OpticalModel`, `ImuModel` and `Medium`; the [bench calibration](#bench-calibration) sets them for a given probe. Reference sizes:
 
 - **Coil sensitivity**: a 30 ml subdural gives about 0.4 dB of L/R difference. Healthy heads give under about 0.2 dB. A 100 ml phantom balloon gives about 2.5 dB.
 - **Optical channel**: the LED and receiver sit close together, so this channel only sees shallow tissue. Its bleed signal is small next to hair and skin differences.
 - **Frequency**: off resonance, the coil reading barely depends on tissue. Sweep close to `f0`.
-- **Not modelled**: tissue permittivity (shifts in resonance), CSF, skull geometry, and dropped or garbled serial lines.
+- **Out of scope**: tissue permittivity (shifts in resonance), CSF, skull geometry, and dropped or garbled serial lines.

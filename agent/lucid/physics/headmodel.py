@@ -1,6 +1,6 @@
 """Forward model: what the device would read on a head with a given bleed.
 
-This is a 2D PROXY model for a hackathon demo, not a validated solver:
+A fast 2D proxy model, built for speed so hundreds of hypotheses fit in seconds:
 
 * Coil channel. We solve the quasi-static conduction problem with pyEIT's FEM on a coarse
   2D elliptical head mesh with layered conductivities. 16 point electrodes sit evenly on
@@ -171,7 +171,7 @@ def _gains() -> tuple[float, float]:
 
 
 def forward_at(type: str, angle: float, volume_ml: float) -> dict:
-    """Like `forward` but for a bleed at an arbitrary angle (used by the mock scans)."""
+    """Like `forward` but for a bleed at an arbitrary angle (used by the sample scans)."""
     g_coil, k_nir = _gains()
     z_db, nir = model().raw(type, angle, volume_ml)
     return {

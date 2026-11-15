@@ -46,7 +46,7 @@ MAX_HYPOTHESES = 140  # per scan, coarse + refined + the skeptic's challengers
 SIM_PACE_S = float(os.getenv("LUCID_SIM_PACE_S", "0.03"))
 
 DEFAULT_SCAN = "temporal_bleed"
-DEFAULT_PATIENT = "demo-patient"
+DEFAULT_PATIENT = "patient-1"
 
 # Transport, simulated like the device: which unit has the patient and how far out it is.
 UNIT = os.getenv("LUCID_UNIT", "Medic 12")

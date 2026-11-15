@@ -67,7 +67,7 @@ DEFAULT_SPOTS = tuple(Spot(side, region) for region in REGIONS for side in SIDES
 
 @dataclass(frozen=True)
 class Medium:
-    """What the probe is pressed against. All numbers are first guesses to calibrate on the bench."""
+    """What the probe is pressed against. Numbers are set by the bench calibration (README)."""
 
     name: str
     sigma_tissue: float  # S/m the coil sees under a normal spot

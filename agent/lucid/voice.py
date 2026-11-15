@@ -336,7 +336,7 @@ def main():
     else:
         if not args.number:
             parser.error('call requires a destination number')
-        call_id = place_call(args.number, {'patient_id': 'demo-patient', 'message': 'A screening scan suggests a possible temporal bleed.', 'report': 'Screening suggests a possible temporal bleed.', 'evidence': 'Simulated scan; no validated diagnosis.'})
+        call_id = place_call(args.number, {'patient_id': 'patient-1', 'message': 'A screening scan suggests a possible temporal bleed.', 'report': 'Screening suggests a possible temporal bleed.', 'evidence': 'Simulated scan; no validated diagnosis.'})
         print('Call ID:', call_id)
         print(json.dumps(wait_for_call(call_id), indent=2))
 

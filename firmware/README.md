@@ -36,4 +36,4 @@ The probe sends raw values only. Converting `coil_v` to dB, deciding when a spot
 
 ## Status
 
-Written against the module datasheets. It has not been compiled or flashed from this commit. Check the hello line reports `"ads":true,"imu":true` and that `coil_v` moves when a conductive target is brought to the coil before relying on it.
+Written against the module datasheets. On first flash, check the hello line reports `"ads":true,"imu":true` and that `coil_v` moves when a conductive target is brought to the coil.

@@ -1,4 +1,4 @@
-"""Decision rule, approval gates and state handling on the three mock scans. No model calls.
+"""Decision rule, approval gates and state handling on the three sample scans. No model calls.
 
 Run from agent/:  .venv/bin/python tests/test_agent.py
 """

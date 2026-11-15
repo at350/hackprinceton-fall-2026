@@ -1,4 +1,4 @@
-"""Scans: fit score, likelihood maps reconstructed from a scan, and the deterministic mock scans."""
+"""Scans: fit score, likelihood maps reconstructed from a scan, and the deterministic sample scans."""
 from __future__ import annotations
 
 import numpy as np
@@ -117,7 +117,7 @@ def spot_peaks(scan: dict) -> list[float]:
     return [round(float(v[spot_sensitivity(i, X, Y) > PEAK_SENS].max()), 2) for i in range(N_SPOTS)]
 
 
-# ---- Mock scans -------------------------------------------------------------
+# ---- Sample scans-------------------------------------------------------------
 MOCK_CASES = ("temporal_bleed", "clear", "uncertain")
 NOISE_COIL_DB = 0.04  # per-spot reading noise after the device averages its stream
 NOISE_NIR = 0.001

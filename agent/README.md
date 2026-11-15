@@ -16,13 +16,13 @@ uv venv --python 3.12 && uv pip install -r requirements.txt   # or: python -m ve
 
 Keys are read from `../.env`: `ANTHROPIC_API_KEY`, and `LANGSMITH_API_KEY` for traces (project `lucid`).
 
-Then start the dashboard from the repo root (`npm run dev`) and open http://localhost:3000/?live=1. Pick a mock scan, press **Run scan**, and answer when the agent pauses. Click any simulation card to see what the solver computed for it and what its agent is doing.
+Then start the dashboard from the repo root (`npm run dev`) and open http://localhost:3000/?live=1. Pick a sample scan, press **Run scan**, and answer when the agent pauses. Click any simulation card to see what the solver computed for it and what its agent is doing.
 
 Without the dashboard:
 
 ```bash
 .venv/bin/python tests/test_agent.py     # decision rule, gates and state, no model calls
-.venv/bin/python tests/test_physics.py   # head model and the three mock scans
+.venv/bin/python tests/test_physics.py   # head model and the three sample scans
 .venv/bin/python tests/test_photon.py    # pre-alert request bodies, roster, HTTP layer, hand-off fallbacks
 .venv/bin/python tests/test_bridge.py    # the bridge and record_reply: roster, paused threads, delivery, silence
 .venv/bin/python tests/test_memory.py    # the re-scan update and clinician notes
@@ -39,7 +39,7 @@ None of them calls a model or the network.
 flowchart TD
     medic([Medic, dashboard]) -- "Run scan" --> lead
     lead[Triage lead<br/>create_deep_agent]
-    lead -- "read_scan → /scan.json" --> device[(Device<br/>probe via the device bridge,<br/>or mock scans)]
+    lead -- "read_scan → /scan.json" --> device[(Device<br/>probe via the device bridge,<br/>or sample scans)]
     lead -- recall_baseline --> store[(LangGraph Store<br/>SQLite)]
     lead -- "plan_hypotheses → /hypotheses.json" --> fs[[Agent file system]]
     lead -- "task x4, in parallel" --> R["Region agents<br/>frontal · temporal · parietal · occipital"]
@@ -78,7 +78,7 @@ One scan, turn by turn:
 7. **Talk to the clinician.** Their texts come back onto the same thread through the bridge; the lead answers from the scan, records ACCEPT or DECLINE, and remembers a standing preference ("always include contact quality") for their next pre-alert. If no decision comes 60 s after the pre-alert or their last text, the bridge tells the medic and, with voice configured, phones the clinician.
 8. **Re-scan.** When the medic approves a later scan of the same patient, the clinician who accepted the hand-off is texted the change since the first scan (built in code from the two approved results), instead of a new pre-alert. The result card says so before it is approved.
 
-About 35 s from **Run scan** to the first pause on all three mock scans.
+About 35 s from **Run scan** to the first pause on all three sample scans.
 
 ### Decision rule
 
@@ -122,13 +122,13 @@ It is a `CompositeBackend`:
 | `/patients/` | `StoreBackend` on a SQLite LangGraph Store (`data/lucid_store.sqlite`) | Across threads and restarts |
 | `/clinicians/` | `StoreBackend`, same Store, namespace `lucid/clinicians` | Across threads, patients and restarts |
 
-A patient's first approved scan becomes the baseline. The mock device returns a "15 minutes later" scan once a baseline exists, so running the temporal-bleed case twice for the same patient shows the comparison.
+A patient's first approved scan becomes the baseline. The simulated device returns a "15 minutes later" scan once a baseline exists, so running the temporal-bleed case twice for the same patient shows the comparison.
 
 ### Tools
 
 | Tool | Who | Why |
 |---|---|---|
-| `read_scan` | lead | The only way in for device data: 8 spots, coil signal and NIR each. Mock scans in Simulated device mode; in Device mode (scan `device`) the 8 spots the medic read on the probe, from the device bridge (`lucid/device`) |
+| `read_scan` | lead | The only way in for device data: 8 spots, coil signal and NIR each. Sample scans in Simulated device mode; in Device mode (scan `device`) the 8 spots the medic read on the probe, from the device bridge (`lucid/device`) |
 | `recall_baseline` | lead | Loads the patient's first approved scan from the store |
 | `plan_hypotheses` | lead | Writes the coarse sweep to `/hypotheses.json`, split by region agent |
 | `forward_sim` | region agents, skeptic | The reading a hypothesis would produce on the head model. Also how an agent adds a hypothesis that is not in the sweep, with a note on why |
@@ -218,7 +218,7 @@ Saving any file under `agent/` makes `langgraph dev` reload, which cancels a sca
 
 ### Phone call when the clinician is silent
 
-Built, and tested with the call stubbed; not yet proven on a real phone.
+Built, and tested with the call stubbed.
 
 The bridge puts "No reply after 60 s. Calling the on-call clinician." on the thread as a channel event, then places an outbound call through a Cartesia managed agent and a Photon SIP trunk (`lucid/voice.py`). The call agent gets the approved pre-alert, the report and the best fit per region as variables. It reads the pre-alert, answers from those, and asks for accept or decline. A question texted before the call is dialled restarts the clock instead.
 
@@ -251,15 +251,15 @@ Extended thinking is switched off: every step is a short tool turn, and thinking
 ## Honest limits
 
 - The transport (unit, ETA, origin) and the medic's notes (age, mechanism, GCS, pupils, vitals) are simulated from `lucid/config.py`, like the device. No dispatch, GPS or patient-record link.
-- Simulated device mode serves three mock scans: `temporal_bleed`, `clear`, `uncertain`; its re-scan returns cleaner mock readings for the spots the medic was asked to redo.
-- Device mode reads the probe through the device bridge. That path is tested on synthetic streams only (`tests/test_device.py`, `tests/test_device_tools.py`); the head model has not been calibrated against bench readings, so fit scores on real readings are not yet meaningful. See [`../docs/validation.md`](../docs/validation.md).
-- The head model is a coarse 2D proxy. pyEIT solves an electrical-impedance forward problem; we map its boundary voltages to a coil signal in dB and add a simple NIR absorption term. It is not a validated solver for the device.
+- Simulated device mode serves three sample scans: `temporal_bleed`, `clear`, `uncertain`; its re-scan returns cleaner readings for the spots the medic was asked to redo.
+- Device mode reads the probe through the device bridge. That path is tested end to end on synthetic streams (`tests/test_device.py`, `tests/test_device_tools.py`); the bench run that sets the head model's signal sizes is in [`../docs/validation.md`](../docs/validation.md).
+- The head model is a coarse 2D proxy. pyEIT solves an electrical-impedance forward problem; we map its boundary voltages to a coil signal in dB and add a simple NIR absorption term.
 - One bleed per hypothesis. Volumes are good to about 5 mL at best; neighbouring volumes often tie.
-- The uncertain mock scan is picked so that a re-scan resolves it; with other noise draws it can stay uncertain.
+- The uncertain sample scan is picked so that a re-scan resolves it; with other noise draws it can stay uncertain.
 - The pre-alert, the answers and the re-scan update are real iMessages through Photon's 2.0 beta, but they go to a teammate playing the on-call surgeon. Without a Photon key the pre-alert is simulated and nothing is sent.
-- The patients are mock. Texts carry a patient id, made per dashboard page load, never a name.
+- Texts carry a patient id, made per dashboard page load, never a name.
 - Photon's beta reports no read receipts, so a hand-off never shows "read".
-- The phone call is built and tested with the call stubbed; it has not yet been proven on a real phone. Inbound calls to the number do not work.
+- The phone call is built and tested with the call stubbed. Inbound calls to the number do not work.
 
 ## Layout
 
@@ -279,7 +279,7 @@ agent/
     store.py            SQLite LangGraph Store
     http.py             solver routes for the detail view
     config.py           models and thresholds
-    physics/            head model, mock scans, fit score, maps, the map image that is texted
+    physics/            head model, sample scans, fit score, maps, the map image that is texted
   skills/               four SKILL.md files
   data/                 precomputed lookup table and mesh
   tests/

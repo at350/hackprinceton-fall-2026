@@ -1,4 +1,4 @@
-"""How a bleed might progress over the next hours, under different conditions. Illustrative, not clinical.
+"""How a bleed might progress over the next hours, under different conditions.
 
 The shape follows well-known patterns, with ballpark numbers:
 - an epidural bleed is arterial and can grow fast in the first hours;

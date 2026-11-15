@@ -33,7 +33,7 @@ def last(_: Any, new: Any) -> Any:
 
 
 class LucidState(DeepAgentState):
-    # Input: which mock scan is on the device, and whose head it is.
+    # Input: which sample scan is on the device, and whose head it is.
     scan_id: NotRequired[Annotated[str, last]]
     patient_id: NotRequired[Annotated[str, last]]
 

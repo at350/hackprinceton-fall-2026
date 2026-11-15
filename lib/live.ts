@@ -25,8 +25,8 @@ import type {
 export const AGENT_URL = process.env.NEXT_PUBLIC_LANGGRAPH_URL ?? "http://localhost:2024";
 export const ASSISTANT_ID = "lucid";
 
-// Mock scans the backend can replay (the Simulated device mode).
-// "device": the scan the medic read on the probe (Device mode); the others are the backend's mock scans.
+// Sample scans the backend can replay (the Simulated device mode).
+// "device": the scan the medic read on the probe (Device mode); the others are the backend's sample scans.
 export type ScanCase = "temporal_bleed" | "clear" | "uncertain" | "device";
 export const SCAN_CASES: { id: ScanCase; label: string }[] = [
   { id: "temporal_bleed", label: "Temporal bleed" },
@@ -318,7 +318,7 @@ export class LiveStore {
     this.unwatchDevice = null;
   }
 
-  /** "Run scan": a fresh thread for the chosen mock scan, or for the scan read on the probe. Needs a device. */
+  /** "Run scan": a fresh thread for the chosen sample scan, or for the scan read on the probe. Needs a device. */
   restart(scan: ScanCase = this.lastCase) {
     if (!devicePresence(this.mode).connected) return;
     if (modeDef(this.mode).source === "device") return this.collect();

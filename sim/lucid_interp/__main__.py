@@ -1,7 +1,7 @@
 """Interpret a recorded scan: a CSV from `python -m lucid_sim generate`, or a raw serial log.
 
-    python -m lucid_interp runs/demo.csv --plot runs/demo_interp.png
-    python -m lucid_interp runs/demo.log --render runs/demo_head.png
+    python -m lucid_interp runs/human_L_temporal.csv --plot runs/human_L_temporal_interp.png
+    python -m lucid_interp runs/human_L_temporal.log --render runs/human_L_temporal_head.png
 """
 from __future__ import annotations
 
