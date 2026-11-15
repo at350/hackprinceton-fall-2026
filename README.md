@@ -4,7 +4,7 @@ Dashboard for **Lucid**, a handheld brain-bleed screener (HackPrinceton Fall 202
 
 The dashboard is driven by a real LangChain deep agent in [`/agent`](agent/README.md): real plan steps, about 100 simulations filling the grid, and Approve / Reject pauses that resume the agent. Where the scans come from is the [mode](#modes): **Simulated device** (the default) replays the backend's mock scans; **Device** reads the Lucid device through a device bridge, which is not built yet.
 
-For Photon's track the hand-off to the hospital is real. After the medic approves, the agent texts the on-call clinician the bleed map and a pre-alert over iMessage (Photon 2.0 beta), answers their texts on the same scan thread, and records ACCEPT or DECLINE; the dashboard shows all of it. The device, the scans and the patients are still simulated. How it works: [Hand-off over iMessage](agent/README.md#hand-off-over-imessage). How to run the demo: [`DEMO.md`](DEMO.md).
+For Photon's track the hand-off to the hospital is real. After the medic approves, the agent texts the on-call clinician the bleed map and a pre-alert over iMessage (Photon 2.0 beta), answers their texts on the same scan thread, and records ACCEPT or DECLINE; the dashboard shows all of it. The device, the scans and the patients are still simulated. How it works: [Hand-off over iMessage](agent/README.md#hand-off-over-imessage).
 
 > The product name lives in one place: `PRODUCT_NAME` in `lib/config.ts`.
 
@@ -55,7 +55,7 @@ With `PHOTON_PROJECT_ID` and `PHOTON_API_KEY` in `.env`, approving the pre-alert
 cd agent && .venv/bin/python -m lucid.bridge
 ```
 
-The agent panel then shows the hand-off status, the clinician's texts and the answers sent back. Without the keys the pre-alert is recorded as simulated. Start order, on-call setup and the two-minute script are in [`DEMO.md`](DEMO.md).
+The agent panel then shows the hand-off status, the clinician's texts and the answers sent back. Without the keys the pre-alert is recorded as simulated.
 
 The UI connects with the LangGraph SDK (`useStream` in `components/LiveBridge.tsx`); `lib/live.ts` maps agent state onto the dashboard store, and `lib/solver.ts` fetches the solver output for the detail view (`components/SimDetail.tsx`). While a hand-off is open, `LiveBridge.tsx` also reads its Store record every 2 s and joins runs this page did not start (the bridge's, when the clinician texts), re-reading the thread if the run already ended or the join fails; `lib/handoff.ts` merges the record into `handoff` and decides what the hand-off row shows. Agent design, tools and skills: [`agent/README.md`](agent/README.md).
 

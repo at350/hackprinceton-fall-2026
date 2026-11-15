@@ -212,7 +212,7 @@ On the thread, the bridge's messages are human messages tagged `[Receiving clini
 | `LUCID_BRIDGE_LOG` | bridge | Log level. Default `INFO` |
 | `CARTESIA_API_KEY`, `CARTESIA_AGENT_ID`, `CARTESIA_FROM_NUMBER_ID` | bridge | Voice. Any one missing or empty means no calls: `CARTESIA_FROM_NUMBER_ID= .venv/bin/python -m lucid.bridge` runs the bridge without voice |
 
-Saving any file under `agent/` makes `langgraph dev` reload, which cancels a scan in progress. The demo runbook, with start order and preflight, is [`../DEMO.md`](../DEMO.md).
+Saving any file under `agent/` makes `langgraph dev` reload, which cancels a scan in progress.
 
 ### Phone call when the clinician is silent
 
