@@ -3,7 +3,6 @@
 import { motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { drawDimBrain, loadBrain, renderScanned } from "@/lib/brain";
-import { LIVE } from "@/lib/live";
 import type { RegionAgent, Simulation } from "@/lib/types";
 import { HEAD } from "@/lib/mock";
 import { useDash } from "@/lib/useDash";
@@ -171,7 +170,7 @@ const RANK = { running: 0, done: 1, queued: 2 } as const;
 export function SimulationsTab() {
   const sims = useDash((s) => s.sims);
   const agents = useDash((s) => s.agents);
-  // Live mode: the simulation whose detail replaces the grid.
+  // The simulation whose detail replaces the grid.
   const [openId, setOpenId] = useState<string | null>(null);
   const open = openId ? sims.find((s) => s.id === openId) : undefined;
   // Where the grid was scrolled to when a card was opened, to return to the same place.
@@ -206,7 +205,7 @@ export function SimulationsTab() {
         >
           <ul className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2.5">
             {ordered.map((s) => (
-              <SimCard key={s.id} sim={s} best={s.id === bestId} onOpen={LIVE ? setOpenId : undefined} />
+              <SimCard key={s.id} sim={s} best={s.id === bestId} onOpen={setOpenId} />
             ))}
           </ul>
         </div>

@@ -1,6 +1,5 @@
-import { demo } from "./demo";
 import { lastFour } from "./handoff";
-import { LIVE } from "./live";
+import { live } from "./live";
 import type { AgentStep, DashState, Handoff, RegionName, ScanSpot, ScanStatus, Simulation, StepState } from "./types";
 
 // The agent run as a graph: the main pipeline left to right, and the triage
@@ -31,7 +30,7 @@ export interface TracePlanStep {
 export type TraceFold =
   | { kind: "plan"; title: string; count: string; waiting: boolean; steps: TracePlanStep[] }
   | { kind: "hypotheses"; title: string; count: string; items: { id: string; label: string; score: number | null; best: boolean }[] }
-  // Live mode: the clinician's texts with Lucid's answers, or a call's transcript.
+  // The clinician's texts with Lucid's answers, or a call's transcript.
   | { kind: "messages"; title: string; count: string; items: { id: string; who: string; text: string }[] };
 
 export interface TracePanel {
@@ -49,7 +48,7 @@ export interface TraceNode {
   title: string;
   subtitle: string;
   status: TraceStatus;
-  startedAt: number | null; // demo ms
+  startedAt: number | null; // ms since Run scan
   endedAt: number | null;
   items: number | null; // items produced so far
   panel: TracePanel;
@@ -66,7 +65,7 @@ export interface TraceEdge {
 }
 
 export interface TraceLog {
-  at: number; // demo ms
+  at: number; // ms since Run scan
   nodeId: string;
   node: string;
   text: string;
@@ -81,14 +80,6 @@ export interface Trace {
 const MAIN = ["device", "spots", "map", "agent", "rank", "approval", "alert"];
 const REGION_IDS: RegionName[] = ["frontal", "temporal", "parietal", "occipital"];
 const TYPE = { epidural: "Epidural", subdural: "Subdural", intraparenchymal: "Intraparenchymal" };
-// Which to-do each tool call belongs to when the step does not say (demo mode), as in AgentPanel.
-const PARENT: Record<string, string> = {
-  "tool-read": "todo-scan",
-  "tool-map": "todo-map",
-  "tool-sim": "todo-sims",
-  "tool-fit": "todo-rank",
-  "tool-alert": "todo-approve",
-};
 
 const node = (n: Omit<TraceNode, "status" | "startedAt" | "endedAt" | "items"> & Partial<TraceNode>): TraceNode => ({
   status: "idle",
@@ -98,7 +89,7 @@ const node = (n: Omit<TraceNode, "status" | "startedAt" | "endedAt" | "items"> &
   ...n,
 });
 
-// ---- The hand-off (live mode) ----
+// ---- The hand-off ----
 // Times stay out of the panels, as everywhere in the inspector; the status row in
 // the agent panel carries them.
 
@@ -290,7 +281,7 @@ function plan(steps: AgentStep[], waiting: boolean): TraceFold | undefined {
         todo.state === "pending"
           ? []
           : tools
-              .filter((x) => (x.parent ?? PARENT[x.id]) === todo.id && x.state !== "pending")
+              .filter((x) => x.parent === todo.id && x.state !== "pending")
               .map((x) => ({ id: x.id, label: x.label, detail: x.detail, running: x.state === "running" })),
     })),
   };
@@ -298,7 +289,7 @@ function plan(steps: AgentStep[], waiting: boolean): TraceFold | undefined {
 
 export function deriveTrace(s: DashState): Trace {
   const t = s.t;
-  const T = demo.timeline;
+  const T = live.timeline;
   const spotsDone = s.spots.filter((p) => p.state === "done").length;
   const done = s.sims.filter((x) => x.status === "done");
   const simsDone = done.length;
@@ -307,9 +298,9 @@ export function deriveTrace(s: DashState): Trace {
   const approval = s.approval;
   // Every spot visited (a weak-contact spot counts as read).
   const scanned = s.spots.every((p) => p.state === "done" || p.state === "rescan");
-  // Live mode: no result is stated until the medic approves it.
+  // No result is stated until the medic approves it.
   const stated = scan !== null && scan.status !== "pending" && scan.status !== "rejected";
-  const alertSent = T.alertSent ?? approval?.state === "approved";
+  const alertSent = T.alertSent;
   const ranked = t >= T.simEnd + 300 && top !== null;
   const rescanAsk = approval?.approveLabel === "Re-scanned";
 
@@ -402,7 +393,7 @@ export function deriveTrace(s: DashState): Trace {
   const verdict: ScanStatus | null = !scan ? null : scan.status === "pending" ? (approval?.state === "rejected" ? "rejected" : null) : scan.status;
   const agentPanel: TracePanel =
     agentStatus === "idle"
-      ? { hero: null, sentence: LIVE ? (s.device === "scanning" ? "Starting." : "Starts when you run a scan.") : "Starts when the device connects.", quiet: true }
+      ? { hero: null, sentence: s.device === "scanning" ? "Starting." : "Starts when you run a scan.", quiet: true }
       : agentStatus === "running"
         ? {
             hero: runningTodo ? { kind: "statement", text: runningTodo.label, size: "question" } : null,
@@ -443,10 +434,9 @@ export function deriveTrace(s: DashState): Trace {
 
   // The agent's memory is the patient baseline in the LangGraph store (agent/README.md):
   // recall_baseline reads it at the start; an approved result becomes the baseline,
-  // so a re-scan is judged against the same head. The demo is the patient's first scan.
-  const approved = approval?.state === "approved";
-  const baseline = LIVE ? s.baseline : null;
-  const saved = LIVE ? baseline === null && stated && scan.status !== "uncertain" : approved && top !== null;
+  // so a re-scan is judged against the same head.
+  const baseline = s.baseline;
+  const saved = baseline === null && stated && scan.status !== "uncertain";
   const memory = node({
     id: "memory",
     kind: "memory",
@@ -604,21 +594,19 @@ export function deriveTrace(s: DashState): Trace {
         panel: alertSent
           ? {
               hero: { kind: "statement", text: "Pre-alert sent", tone: "primary", icon: "check" },
-              sentence: LIVE
-                ? `It went to ${sentTo ? (sentTo.startsWith("the ") ? sentTo : `the ${sentTo}`) : "the receiving trauma center"}.`
-                : "The map, the best fit and the scan log went to the trauma center.",
+              sentence: `It went to ${sentTo ? (sentTo.startsWith("the ") ? sentTo : `the ${sentTo}`) : "the receiving trauma center"}.`,
             }
           : { hero: null, sentence: "Not sent.", quiet: true },
       });
 
-  // Live mode: what became of the pre-alert, as an n8n If: a reply, or silence and a call.
-  const handoff = LIVE ? handoffNodes(s, h) : null;
+  // What became of the pre-alert, as an n8n If: a reply, or silence and a call.
+  const handoff = handoffNodes(s, h);
 
-  const nodes = [device, spots, map, agent, rank, approvalNode, alert, ...(handoff?.nodes ?? []), model, memory, simTool, fitTool, ...regions];
+  const nodes = [device, spots, map, agent, rank, approvalNode, alert, ...handoff.nodes, model, memory, simTool, fitTool, ...regions];
 
   const edges: TraceEdge[] = [
     ...MAIN.slice(1).map((id, i) => ({ from: MAIN[i], to: id, kind: "main" as const })),
-    ...(handoff?.edges ?? []),
+    ...handoff.edges,
     { from: "model", to: "agent", kind: "ai" },
     { from: "memory", to: "agent", kind: "ai" },
     { from: "forward_sim", to: "agent", kind: "ai" },

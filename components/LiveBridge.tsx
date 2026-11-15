@@ -32,8 +32,8 @@ export default function LiveBridge({ run }: { run: number }) {
     threadId,
     onThreadId: setThreadId,
     onCreated: (meta: { run_id: string }) => void own.current.add(meta.run_id),
-    onCustomEvent: (data: unknown) => live?.event(run, data as LiveEvent),
-    onError: (err: unknown) => live?.fail(run, err),
+    onCustomEvent: (data: unknown) => live.event(run, data as LiveEvent),
+    onError: (err: unknown) => live.fail(run, err),
   };
   const stream = useStream<LiveValues>(options);
   const latest = useRef(stream);
@@ -52,7 +52,7 @@ export default function LiveBridge({ run }: { run: number }) {
     const parts = [snap.values, snap.messages, snap.interrupt, snap.isLoading, snap.error];
     if (parts.every((p, i) => p === synced.current[i])) return;
     synced.current = parts;
-    live?.sync(run, snap);
+    live.sync(run, snap);
   });
 
   useEffect(() => {
@@ -69,19 +69,19 @@ export default function LiveBridge({ run }: { run: number }) {
         }),
       stop: () => void latest.current.stop(),
     };
-    live?.attach(run, handle);
+    live.attach(run, handle);
     // Deferred so React's double-invoked effects in development start one run, not two.
-    const id = setTimeout(() => live?.begin(run), 0);
+    const id = setTimeout(() => live.begin(run), 0);
     return () => {
       clearTimeout(id);
-      live?.detach(handle);
+      live.detach(handle);
     };
   }, [run]);
 
   // The hand-off, every 2 s once the pre-alert has gone out. Stops with this
   // component: a new scan mounts a new bridge on a new thread.
   useEffect(() => {
-    if (!threadId || !live) return;
+    if (!threadId) return;
     const store = live;
     const client = latest.current.client;
     const seen = new Set<string>();

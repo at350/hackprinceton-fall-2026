@@ -2,9 +2,8 @@
 
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
-import { demo } from "@/lib/demo";
 import { type BadgeKey, type HandoffStep, type Tone, clockTime, handoffBadge, handoffSteps, lastFour } from "@/lib/handoff";
-import { LIVE } from "@/lib/live";
+import { live } from "@/lib/live";
 import type { AgentStep, CallEntry, ChatMessage, Handoff } from "@/lib/types";
 import { useDash } from "@/lib/useDash";
 import {
@@ -32,15 +31,6 @@ import {
 
 // Beautiful UI motion.
 const EASE_UI = [0.23, 1, 0.32, 1] as const;
-
-// Which to-do each tool call belongs to, when the step does not say (demo mode).
-const PARENT: Record<string, string> = {
-  "tool-read": "todo-scan",
-  "tool-map": "todo-map",
-  "tool-sim": "todo-sims",
-  "tool-fit": "todo-rank",
-  "tool-alert": "todo-approve",
-};
 
 // Waiting: the grid settles into a pause shape (outer columns lit).
 const PAUSE = new Set([0, 2, 3, 5, 6, 8]);
@@ -118,8 +108,8 @@ function Status() {
   const streaming = useDash((s) => s.messages.some((m) => m.shown < m.text.length));
   const waiting = useDash((s) => s.approval?.state === "pending");
   const t = useDash((s) => Math.floor(s.t / 1000));
-  // Live mode: the run has begun but the agent has not written its plan yet.
-  const starting = useDash((s) => LIVE && s.device === "scanning");
+  // The run has begun but the agent has not written its plan yet.
+  const starting = useDash((s) => s.device === "scanning");
   const [open, setOpen] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
 
@@ -150,7 +140,7 @@ function Status() {
       <div className="flex h-12 shrink-0 items-center gap-2.5 px-4">
         <DotGrid mode={starting ? "working" : "idle"} />
         <span className="text-[13px] text-muted">
-          {starting ? "Starting" : LIVE ? "Starts when you run a scan" : "Starts when the device connects"}
+          {starting ? "Starting" : "Starts when you run a scan"}
         </span>
       </div>
     );
@@ -192,7 +182,7 @@ function Status() {
           >
             <ul>
               {todos.map((todo) => {
-                const kids = tools.filter((x) => (x.parent ?? PARENT[x.id]) === todo.id);
+                const kids = tools.filter((x) => x.parent === todo.id);
                 const isActive = todo.state === "running";
                 return (
                   <li key={todo.id} data-active={isActive || undefined}>
@@ -218,7 +208,7 @@ function Status() {
   );
 }
 
-// ---- Hand-off (live mode) -------------------------------------------------
+// ---- Hand-off -------------------------------------------------------------
 
 const TONE: Record<Tone, string> = { text: "var(--text)", primary: "var(--primary)", warn: "var(--bleed-text)", muted: "var(--muted)" };
 
@@ -480,7 +470,7 @@ function Approval() {
           <div className="mt-3 flex justify-end gap-2">
             <button
               type="button"
-              onClick={() => demo.resolveApproval(false)}
+              onClick={() => live.resolveApproval(false)}
               className="flex h-10 items-center gap-1.5 rounded-[10px] px-4 text-[13.5px] font-medium text-text transition-colors duration-100 hover:bg-[rgba(255,255,255,0.06)] active:scale-[0.97]"
             >
               <IconX size={13} />
@@ -488,7 +478,7 @@ function Approval() {
             </button>
             <button
               type="button"
-              onClick={() => demo.resolveApproval(true)}
+              onClick={() => live.resolveApproval(true)}
               className="flex h-10 items-center gap-1.5 rounded-[10px] bg-primary px-5 text-[13.5px] font-semibold text-[#04141a] transition-transform duration-150 active:scale-[0.97]"
             >
               <IconCheck size={13} strokeWidth={2.2} />
@@ -508,7 +498,7 @@ function Composer() {
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        demo.sendMedic(text);
+        live.sendMedic(text);
         setText("");
       }}
       className="mx-3 mb-3 flex shrink-0 items-center gap-1.5 rounded-[14px] border border-[rgba(255,255,255,0.08)] bg-[rgba(0,0,0,0.22)] p-1.5 pl-3 transition-colors duration-150 focus-within:border-[rgba(255,255,255,0.18)]"

@@ -1,20 +1,24 @@
 "use client";
 
-import { motion } from "motion/react";
-import { useState } from "react";
-import { DEMO_LENGTH_MS } from "@/lib/config";
-import { demo } from "@/lib/demo";
+import { AnimatePresence, motion } from "motion/react";
+import { useEffect, useRef, useState } from "react";
+import { devicePresence } from "@/lib/device";
 import { SCAN_CASES, type ScanCase, live } from "@/lib/live";
+import { MODES, modeDef, setMode, useMode } from "@/lib/mode";
 import type { DeviceStatus, ViewId } from "@/lib/types";
 import { formatClock, useDash } from "@/lib/useDash";
-import { IconArrowRight, IconClock, IconDashboard, IconLink, IconPause, IconPlay, IconPlug, IconWorkflow, Spinner } from "./icons";
+import { IconArrowRight, IconCheck, IconChevronDown, IconClock, IconDashboard, IconLink, IconPlug, IconWorkflow, Spinner } from "./icons";
 import { Logo } from "./Logo";
 import { EASE_ENTER, Swap } from "./ui";
 
+// Beautiful UI motion.
+const EASE_UI = [0.23, 1, 0.32, 1] as const;
+
 const DEVICE: Record<DeviceStatus, { label: string; color: string }> = {
-  disconnected: { label: "Disconnected", color: "var(--muted)" },
+  disconnected: { label: "No device", color: "var(--muted)" },
   connecting: { label: "Connecting", color: "var(--muted)" },
-  connected: { label: "Device connected", color: "var(--primary)" },
+  // The mode under it names the device.
+  connected: { label: "Connected", color: "var(--primary)" },
   scanning: { label: "Scanning", color: "var(--primary)" },
 };
 
@@ -45,38 +49,102 @@ function Elapsed() {
   );
 }
 
-/** Delta / GenRevive: filled pill CTA with a contrasting circular end, arrow swaps on hover. */
-function Cta({ label, onClick, progress }: { label: string; onClick: () => void; progress?: number }) {
+/** Delta / GenRevive: filled pill CTA with a contrasting circular end, arrow swaps on hover. Disabled, it says why on hover. */
+function Cta({ label, onClick, disabled, reason }: { label: string; onClick: () => void; disabled?: boolean; reason?: string }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="group relative flex h-11 items-center gap-3 overflow-hidden rounded-full bg-text pl-5 pr-1 text-[14px] font-medium text-bg transition-transform duration-150 active:scale-[0.97]"
+      disabled={disabled}
+      title={disabled ? reason : undefined}
+      className="group relative flex h-11 items-center gap-3 overflow-hidden rounded-full bg-text pl-5 pr-1 text-[14px] font-medium text-bg transition-[transform,opacity] duration-150 enabled:active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-35"
     >
       <span className="flex flex-col items-start leading-none">
         <span>{label}</span>
       </span>
       <span className="relative grid size-9 place-items-center overflow-hidden rounded-full bg-bg text-text">
-        <span className="absolute transition-transform duration-[400ms] [transition-timing-function:var(--ease-swap)] group-hover:translate-x-[calc(100%+12px)]">
+        <span className="absolute transition-transform duration-[400ms] [transition-timing-function:var(--ease-swap)] group-enabled:group-hover:translate-x-[calc(100%+12px)]">
           <IconArrowRight size={14} />
         </span>
-        <span className="absolute -translate-x-[calc(100%+12px)] transition-transform duration-[400ms] [transition-timing-function:var(--ease-swap)] group-hover:translate-x-0">
+        <span className="absolute -translate-x-[calc(100%+12px)] transition-transform duration-[400ms] [transition-timing-function:var(--ease-swap)] group-enabled:group-hover:translate-x-0">
           <IconArrowRight size={14} />
         </span>
       </span>
-      {progress !== undefined && (
-        <span className="absolute bottom-0 left-0 h-[2px] bg-primary" style={{ width: `${progress * 100}%`, transition: "width 1s linear" }} />
-      )}
     </button>
   );
 }
 
-function PlayDemo() {
-  const sec = useDash((s) => Math.floor(s.t / 1000));
-  return <Cta label="Play demo" onClick={() => demo.restart()} progress={(sec * 1000) / DEMO_LENGTH_MS} />;
+/**
+ * Which device feeds the dashboard (lib/mode.ts), named under the device status.
+ * The menu gives each mode's one line; switching starts the dashboard over.
+ */
+function ModeMenu() {
+  const mode = useMode();
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => void (root.current?.contains(e.target as Node) || setOpen(false));
+    const esc = (e: KeyboardEvent) => void (e.key === "Escape" && setOpen(false));
+    addEventListener("pointerdown", away);
+    addEventListener("keydown", esc);
+    return () => {
+      removeEventListener("pointerdown", away);
+      removeEventListener("keydown", esc);
+    };
+  }, [open]);
+
+  return (
+    <div ref={root} className="relative">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className={`flex items-center gap-1 whitespace-nowrap text-[12.5px] leading-none transition-colors duration-150 hover:text-text ${open ? "text-text" : "text-muted"}`}
+      >
+        {modeDef(mode).label}
+        <IconChevronDown size={11} className="transition-transform duration-300" style={{ transform: open ? "rotate(180deg)" : "none" }} />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            role="menu"
+            aria-label="Mode"
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.2, ease: EASE_UI }}
+            className="absolute top-[calc(100%+14px)] -left-3 w-[288px] rounded-[14px] border border-[rgba(255,255,255,0.08)] bg-[#181b20] p-1.5"
+          >
+            {MODES.map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={m.id === mode}
+                onClick={() => {
+                  setMode(m.id);
+                  setOpen(false);
+                }}
+                className="flex w-full items-start gap-2.5 rounded-[10px] px-2.5 py-2.5 text-left transition-colors duration-100 hover:bg-[rgba(255,255,255,0.05)]"
+              >
+                <span className="grid h-[18px] w-4 shrink-0 place-items-center text-primary">{m.id === mode && <IconCheck size={14} />}</span>
+                <span className="flex min-w-0 flex-col gap-1">
+                  <span className="text-[13.5px] font-medium leading-[18px] text-text">{m.label}</span>
+                  <span className="text-[12.5px] leading-[1.45] text-muted">{m.description}</span>
+                </span>
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
 }
 
-/** Live mode: which mock scan the device holds. Same segmented look as the view switch. */
+/** Which mock scan the simulated device holds. Same segmented look as the view switch. */
 function ScanPicker({ value, onChange }: { value: ScanCase; onChange: (id: ScanCase) => void }) {
   const segment = "h-8 items-center whitespace-nowrap rounded-[7px] px-3 text-[13px] font-medium transition-colors duration-150";
   const at = SCAN_CASES.findIndex((c) => c.id === value);
@@ -122,7 +190,7 @@ function ViewSwitch() {
           type="button"
           role="tab"
           aria-selected={view === id}
-          onClick={() => demo.setView(id)}
+          onClick={() => live.setView(id)}
           aria-label={label}
           title={label}
           className={`flex h-8 items-center gap-1.5 whitespace-nowrap rounded-[7px] px-3 text-[13px] font-medium transition-colors duration-150 ${
@@ -139,8 +207,8 @@ function ViewSwitch() {
 }
 
 export function Header() {
-  const playing = useDash((s) => s.playing);
-  const sec = useDash((s) => Math.floor(s.t / 1000));
+  const mode = useMode();
+  const device = devicePresence(mode);
   const [scanCase, setScanCase] = useState<ScanCase>("temporal_bleed");
   return (
     <motion.header
@@ -155,34 +223,23 @@ export function Header() {
         <div className="flex min-w-0 flex-1 basis-0 items-center gap-5">
           <Logo />
           <span className="h-5 w-px shrink-0 bg-line" />
-          <span className="min-w-0 truncate">
-            <DeviceStatusChip />
-          </span>
+          {/* The device: its status, and under it the mode that says which device. */}
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <span className="min-w-0 truncate">
+              <DeviceStatusChip />
+            </span>
+            <span className="pl-6">
+              <ModeMenu />
+            </span>
+          </div>
         </div>
         <ViewSwitch />
         <div className="flex min-w-0 flex-1 basis-0 items-center justify-end gap-5">
           <Elapsed />
-          {live ? (
-            <ScanPicker value={scanCase} onChange={setScanCase} />
-          ) : (
-            <>
-              <span className="hidden h-5 w-px bg-line @min-[900px]:block" />
-              <span className="hidden whitespace-nowrap text-[13px] text-muted @min-[900px]:inline">
-                {formatClock(sec * 1000)} / {formatClock(DEMO_LENGTH_MS)}
-              </span>
-              <button
-                type="button"
-                onClick={() => demo.togglePause()}
-                aria-label={playing ? "Pause demo" : "Resume demo"}
-                className="grid size-10 place-items-center rounded-full text-muted transition-colors duration-150 hover:bg-raised hover:text-text"
-              >
-                {playing ? <IconPause size={14} /> : <IconPlay size={14} />}
-              </button>
-            </>
-          )}
+          {modeDef(mode).source === "mock" && <ScanPicker value={scanCase} onChange={setScanCase} />}
         </div>
       </div>
-      {live ? <Cta label="Run scan" onClick={() => live?.restart(scanCase)} /> : <PlayDemo />}
+      <Cta label="Run scan" onClick={() => live.restart(scanCase)} disabled={!device.connected} reason={device.reason} />
     </motion.header>
   );
 }

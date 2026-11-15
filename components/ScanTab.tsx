@@ -1,31 +1,37 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
+import { type DevicePresence, devicePresence } from "@/lib/device";
+import { useMode } from "@/lib/mode";
 import type { ScanSpot, ScanUpdate } from "@/lib/types";
 import { useDash } from "@/lib/useDash";
 import { InteractiveBrainView } from "./InteractiveBrainView";
-import { IconClock, Ring } from "./icons";
+import { IconClock, IconPlug, Ring } from "./icons";
 import { EASE_ENTER, EASE_MASK, SCAN_STATUS } from "./ui";
 
+// Before any scan: waiting for one, or there is no device to scan with.
+const AWAITING = { label: "Awaiting scan", color: "var(--muted)", Icon: IconClock };
+const NO_DEVICE = { label: "No device connected", color: "var(--muted)", Icon: IconPlug };
+
 /** Primary: one large, tightly tracked statement (Alpine Bio). */
-function Verdict({ scan }: { scan: ScanUpdate | null }) {
-  const s = scan ? SCAN_STATUS[scan.status] : null;
+function Verdict({ scan, device }: { scan: ScanUpdate | null; device: DevicePresence }) {
+  const s = scan ? SCAN_STATUS[scan.status] : device.connected ? AWAITING : NO_DEVICE;
   return (
     // Clip vertically only (for the mask-up swap) so the text is never cut horizontally.
     <div className="relative h-[60px] w-full" style={{ overflowX: "visible", overflowY: "clip" }}>
       <AnimatePresence mode="popLayout" initial={false}>
         <motion.h1
-          key={scan?.status ?? "none"}
+          key={s.label}
           initial={{ y: "135%" }}
           animate={{ y: "0%" }}
           exit={{ y: "-135%" }}
           transition={{ duration: 0.6, ease: EASE_MASK }}
           className="flex items-center gap-3"
-          style={{ color: s?.color ?? "var(--muted)" }}
+          style={{ color: s.color }}
         >
-          {s ? <s.Icon size={36} strokeWidth={1.5} /> : <IconClock size={36} strokeWidth={1.5} />}
+          <s.Icon size={36} strokeWidth={1.5} />
           <span className="font-display whitespace-nowrap text-[clamp(40px,3.9vw,56px)] font-medium leading-none tracking-[-0.045em]">
-            {s?.label ?? "Awaiting scan"}
+            {s.label}
           </span>
         </motion.h1>
       </AnimatePresence>
@@ -34,9 +40,9 @@ function Verdict({ scan }: { scan: ScanUpdate | null }) {
 }
 
 /** Secondary: the numbers behind the verdict, as one line directly under it. */
-function Summary({ scan, done }: { scan: ScanUpdate | null; done: number }) {
+function Summary({ scan, done, device, scanning }: { scan: ScanUpdate | null; done: number; device: DevicePresence; scanning: boolean }) {
   const parts: string[] = !scan
-    ? ["Place the device on spot 1 to begin"]
+    ? [!device.connected ? device.reason : scanning ? "Reading the scan" : "Press Run scan to begin"]
     : scan.status === "pending"
       ? ["Result appears once you approve it"]
       : scan.status === "rejected"
@@ -93,6 +99,8 @@ export function ScanTab() {
   const spots = useDash((s) => s.spots);
   const current = useDash((s) => s.currentSpot);
   const run = useDash((s) => s.run);
+  const scanning = useDash((s) => s.device === "scanning");
+  const device = devicePresence(useMode());
   const done = spots.filter((s) => s.state === "done").length;
 
   return (
@@ -104,8 +112,8 @@ export function ScanTab() {
         className="flex shrink-0 items-start justify-between gap-6"
       >
         <div className="flex min-w-0 flex-1 flex-col gap-3">
-          <Verdict scan={scan} />
-          <Summary scan={scan} done={done} />
+          <Verdict scan={scan} device={device} />
+          <Summary scan={scan} done={done} device={device} scanning={scanning} />
         </div>
         <Progress spots={spots} current={current} />
       </motion.header>

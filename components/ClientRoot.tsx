@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 
-// The demo store, canvases and timers are browser-only.
+// The store, canvases and timers are browser-only.
 const Dashboard = dynamic(() => import("./Dashboard"), { ssr: false });
 
 export function ClientRoot() {

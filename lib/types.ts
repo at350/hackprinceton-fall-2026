@@ -192,8 +192,7 @@ export type ViewId = "dashboard" | "trace";
 export interface DashState {
   run: number; // increments on every restart
   view: ViewId; // survives restarts
-  t: number; // demo clock, ms
-  playing: boolean;
+  t: number; // ms since Run scan
   device: DeviceStatus;
   quality: SignalQuality;
   scanStartedAt: number | null;

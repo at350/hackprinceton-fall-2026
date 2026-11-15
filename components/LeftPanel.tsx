@@ -2,7 +2,7 @@
 
 import { motion } from "motion/react";
 import { useLayoutEffect, useRef, useState } from "react";
-import { demo } from "@/lib/demo";
+import { live } from "@/lib/live";
 import type { TabId } from "@/lib/types";
 import { useDash } from "@/lib/useDash";
 import { ScanTab } from "./ScanTab";
@@ -50,7 +50,7 @@ function TabButton({
       type="button"
       role="tab"
       aria-selected={active}
-      onClick={() => demo.setTab(id)}
+      onClick={() => live.setTab(id)}
       className={`relative flex min-w-[168px] items-center justify-between gap-6 px-4 text-[14px] font-medium transition-colors duration-200 [transition-timing-function:var(--ease-hover)] ${
         active ? "text-text" : "text-muted hover:text-text"
       }`}

@@ -1,6 +1,8 @@
 import { SAMPLE_RATE_HZ } from "./config";
+import { devicePresence } from "./device";
 import { type Tagged, mergeHandoff, parseTagged, sameHandoff } from "./handoff";
 import { REGIONS, deviceBuffer, deviceSample, initialSpots } from "./mock";
+import { type Mode, getMode, modeDef, subscribeMode } from "./mode";
 import type {
   AgentActivity,
   AgentStep,
@@ -17,20 +19,13 @@ import type {
   ViewId,
 } from "./types";
 
-// Live mode: the same dashboard state, driven by the real LangGraph agent
-// instead of the scripted story. <LiveBridge/> owns the stream and feeds this store.
-
-/** `?live=1` (or `?live=0` to force the demo), else NEXT_PUBLIC_LUCID_MODE=live. */
-export const LIVE = (() => {
-  if (typeof window === "undefined") return false;
-  const q = new URLSearchParams(location.search).get("live");
-  return q === "1" || (q !== "0" && process.env.NEXT_PUBLIC_LUCID_MODE === "live");
-})();
+// The dashboard state, driven by the real LangGraph agent. <LiveBridge/> owns the
+// stream and feeds this store. Where scans come from is the mode (lib/mode.ts).
 
 export const AGENT_URL = process.env.NEXT_PUBLIC_LANGGRAPH_URL ?? "http://localhost:2024";
 export const ASSISTANT_ID = "lucid";
 
-// Mock scans the backend can replay (there is no hardware yet).
+// Mock scans the backend can replay (the Simulated device mode).
 export type ScanCase = "temporal_bleed" | "clear" | "uncertain";
 export const SCAN_CASES: { id: ScanCase; label: string }[] = [
   { id: "temporal_bleed", label: "Temporal bleed" },
@@ -116,7 +111,7 @@ export interface Timeline {
   simAt: number;
   simEnd: number;
   approvalAt: number;
-  alertSent?: boolean;
+  alertSent: boolean;
 }
 
 // ---- Mapping helpers ------------------------------------------------------
@@ -207,13 +202,12 @@ function errorText(err: unknown) {
   return msg ? `The agent run stopped with an error: ${msg}` : "The agent run stopped with an error.";
 }
 
-function initialState(run = 0, view: ViewId = "dashboard"): DashState {
+function initialState(mode: Mode, run = 0, view: ViewId = "dashboard"): DashState {
   return {
     run,
     view,
     t: 0,
-    playing: true,
-    device: "connected",
+    device: devicePresence(mode).connected ? "connected" : "disconnected",
     quality: "good",
     scanStartedAt: null,
     scanEndedAt: null,
@@ -247,12 +241,14 @@ const idleTimeline = (): Timeline => ({
 
 let uid = 0;
 
-/** Same public surface as DemoStore, so the components don't care which one is active. */
 export class LiveStore {
-  state: DashState = initialState();
+  // The mode this state belongs to; a switch starts over (see syncMode).
+  private mode: Mode = getMode();
+  state: DashState = initialState(this.mode);
   timeline: Timeline = idleTimeline();
   private listeners = new Set<() => void>();
   private timer: ReturnType<typeof setInterval> | null = null;
+  private unsubscribeMode: (() => void) | null = null;
   private sampleClock = 0;
   private runStart = 0;
   private busy = false; // a run is streaming or waiting for the medic
@@ -303,21 +299,46 @@ export class LiveStore {
     if (this.timer) return;
     this.sampleClock = performance.now();
     this.timer = setInterval(() => this.tick(), 50);
+    this.unsubscribeMode = subscribeMode(() => this.syncMode());
+    this.syncMode();
   }
 
   stop() {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    this.unsubscribeMode?.();
+    this.unsubscribeMode = null;
   }
 
-  /** "Run scan": a fresh thread for the chosen mock scan. */
+  /** "Run scan": a fresh thread for the chosen mock scan. Needs a device. */
   restart(scan: ScanCase = this.lastCase) {
+    if (!devicePresence(this.mode).connected) return;
+    this.clear(scan);
+    this.state = { ...this.state, device: "scanning", scanStartedAt: 0 };
+    this.timeline = { ...idleTimeline(), scanAt: 0 };
+    this.runStart = performance.now();
+    this.busy = true;
+    this.emit();
+  }
+
+  /** After a mode switch: no run, nothing left from the other mode. The patient stays (one per page load). */
+  private syncMode() {
+    const mode = getMode();
+    if (mode === this.mode) return;
+    this.mode = mode;
+    this.clear(null);
+    deviceBuffer.clear();
+    this.emit();
+  }
+
+  /** Drops the run and its thread; a new run number mounts a new stream (see Dashboard). */
+  private clear(start: ScanCase | null) {
     this.bridge?.stop();
     this.bridge = null;
-    this.lastCase = scan;
-    this.pendingStart = scan;
-    this.state = { ...initialState(this.state.run + 1, this.state.view), device: "scanning", scanStartedAt: 0 };
-    this.timeline = { ...idleTimeline(), scanAt: 0 };
+    if (start) this.lastCase = start;
+    this.pendingStart = start;
+    this.state = initialState(this.mode, this.state.run + 1, this.state.view);
+    this.timeline = idleTimeline();
     this.wire = { messages: [], isLoading: false };
     this.seen = {};
     this.todos = [];
@@ -330,18 +351,10 @@ export class LiveStore {
     this.handoffRecord = null;
     this.external = false;
     this.polled = false;
-    this.runStart = performance.now();
-    this.busy = true;
+    this.busy = false;
     this.streaming = false;
     this.failed = false;
-    this.emit();
   }
-
-  // The demo clock controls mean nothing live.
-  seek(ms: number) {
-    void ms;
-  }
-  togglePause() {}
 
   setView(view: ViewId) {
     this.set({ view });
@@ -517,8 +530,9 @@ export class LiveStore {
       return this.resolveApproval(false, false, trimmed);
     }
     if (!this.wire.messages.length || !this.bridge) {
+      const device = devicePresence(this.mode);
       this.say(trimmed, "medic");
-      this.say("No scan yet. Press Run scan to start.", "agent");
+      this.say(device.connected ? "No scan yet. Press Run scan to start." : `No scan yet: no device is connected. ${device.reason}.`, "agent");
     } else if (this.busy || this.external) {
       this.say(trimmed, "medic", true); // sent when the agent is free
     } else {
@@ -790,12 +804,13 @@ export class LiveStore {
 
   private tick() {
     const now = performance.now();
-    // The chart keeps using the mock device stream.
+    // A simulated device streams mock signals for the charts; without a device they stay empty.
     const step = 1000 / SAMPLE_RATE_HZ;
     if (now - this.sampleClock > 1000) this.sampleClock = now - 1000;
+    const mock = modeDef(getMode()).source === "mock";
     while (this.sampleClock + step <= now) {
       this.sampleClock += step;
-      deviceBuffer.push(deviceSample(this.sampleClock, { spot: null, moving: false, quality: "good" }));
+      if (mock) deviceBuffer.push(deviceSample(this.sampleClock, { spot: null, moving: false, quality: "good" }));
     }
     if (!this.busy) return;
     const t = now - this.runStart;
@@ -805,10 +820,10 @@ export class LiveStore {
   }
 }
 
-// One store per browser tab, only in live mode. A hot reload re-runs this module
-// whenever a file it imports is saved; the store (and the run it holds) survives
-// it, with the class's new code swapped in.
+// One store per browser tab. A hot reload re-runs this module whenever a file it
+// imports is saved; the store (and the run it holds) survives it, with the
+// class's new code swapped in.
 const kept = globalThis as { __lucidLive?: LiveStore };
-export const live = LIVE
-  ? (kept.__lucidLive = kept.__lucidLive ? Object.setPrototypeOf(kept.__lucidLive, LiveStore.prototype) : new LiveStore())
-  : null;
+export const live: LiveStore = (kept.__lucidLive = kept.__lucidLive
+  ? Object.setPrototypeOf(kept.__lucidLive, LiveStore.prototype)
+  : new LiveStore());
