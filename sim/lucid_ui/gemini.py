@@ -14,7 +14,7 @@ import urllib.request
 from pathlib import Path
 
 API = "https://generativelanguage.googleapis.com/v1beta"
-DEFAULT_MODEL = "gemini-4-hydrogen"
+DEFAULT_MODEL = "gemini-flash-latest"
 TIMEOUT_S = 40
 
 SYSTEM = """You are the read-out for Lucid, a handheld screener that looks for bleeding inside the skull.
@@ -82,7 +82,7 @@ def _fallback_model() -> str | None:
     models = [m for m in _get(f"{API}/models?pageSize=200").get("models", [])
               if "generateContent" in m.get("supportedGenerationMethods", [])]
     names = [m["name"].removeprefix("models/") for m in models]
-    for want in ("hydrogen", "flash", "pro"):
+    for want in ("flash-latest", "flash", "pro"):
         hits = [n for n in names if want in n and not any(x in n for x in ("image", "tts", "audio", "live", "embed"))]
         if hits:
             return sorted(hits)[-1]
