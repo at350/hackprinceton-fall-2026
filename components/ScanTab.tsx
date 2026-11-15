@@ -5,6 +5,7 @@ import { type DevicePresence, devicePresence } from "@/lib/device";
 import { useMode } from "@/lib/mode";
 import type { ScanSpot, ScanUpdate } from "@/lib/types";
 import { useDash } from "@/lib/useDash";
+import { GeminiBrief } from "./GeminiBrief";
 import { InteractiveBrainView } from "./InteractiveBrainView";
 import { IconClock, IconPlug, Ring } from "./icons";
 import { EASE_ENTER, EASE_MASK, SCAN_STATUS } from "./ui";
@@ -124,6 +125,9 @@ export function ScanTab() {
           <InteractiveBrainView scan={scan} spots={spots} current={current} run={run} />
         </div>
       </div>
+
+      {/* One brief per run: a new run starts a fresh one. */}
+      <GeminiBrief key={run} />
     </div>
   );
 }

@@ -6,7 +6,7 @@ The dashboard is driven by a real LangChain deep agent in [`/agent`](agent/READM
 
 For Photon's track the hand-off to the hospital is real. After the medic approves, the agent texts the on-call clinician the bleed map and a pre-alert over iMessage (Photon 2.0 beta), answers their texts on the same scan thread, and records ACCEPT or DECLINE; the dashboard shows all of it. In Simulated device mode the device, the scans and the patients are simulated; Device mode reads the probe (bench status in [`docs/validation.md`](docs/validation.md)). How it works: [Hand-off over iMessage](agent/README.md#hand-off-over-imessage).
 
-The probe's signal simulator, interpreter and a live 3D scan view are in [`/sim`](sim/README.md) (`cd sim && python -m lucid_ui`). There, Google Gemini writes the hand-off note when a scan finishes and answers questions about it, from the scan's own numbers.
+Once the agent has a result, **Google Gemini** writes a hand-off brief on the Scan tab (finding, where, quality, next step) and answers questions about the scan, from the dashboard's own numbers. See [Gemini brief](#gemini-brief).
 
 > The product name lives in one place: `PRODUCT_NAME` in `lib/config.ts`.
 
@@ -101,6 +101,12 @@ An n8n-style canvas of the same run, derived from the dashboard state by `derive
 - **Logs** (bottom): collapsed to one strip showing the latest entry; expand for one line per node start and finish. Clicking a row selects that node.
 - **Canvas controls:** drag to pan, scroll to zoom; fit view / zoom in / zoom out buttons bottom left. Fits itself on resize.
 
+## Gemini brief
+
+When the agent asks the medic to approve a result (or once a result stands), the Scan tab shows **Hand-off brief by Gemini**: the pre-alert a medic would send ahead, in four lines (Finding, Where, Quality, Next), and a box to ask Gemini about the scan. The browser sends `app/api/gemini/route.ts` the numbers behind the screen (`briefContext` in `lib/gemini.ts`: the result, the 8 spots and their readings, the best-fitting simulations, the agent's last words, the hand-off status); the route calls the Gemini API with the key on the server. Gemini is told to use only those numbers and to say when a result is proposed but not approved.
+
+Needs `GEMINI_API_KEY` in `.env` (free at https://aistudio.google.com/apikey). `GEMINI_MODEL` picks the model (default `gemini-flash-latest`; if it is not available, the first text model the key can use is taken). Without a key the card says how to turn it on.
+
 ## Project layout
 
 ```
@@ -110,7 +116,8 @@ components/
   Dashboard.tsx      frame + layout (sketch: big tabbed panel left, two panels right); swaps in the trace view
   Header.tsx         floating nav pill, device status with the mode menu, Dashboard / Agent trace switch, scan time, sample scan picker, Run scan
   LeftPanel.tsx      folder tabs: Scan / Simulations
-  ScanTab.tsx        verdict, summary line, spot progress, brain view
+  ScanTab.tsx        verdict, summary line, spot progress, brain view, Gemini brief
+  GeminiBrief.tsx    hand-off brief and questions by Google Gemini (route: app/api/gemini/route.ts)
   BrainView.tsx      brain render + heatmap canvas + scan-spot markers + active-spot arc
   SimulationsTab.tsx region agent rows + simulation grid
   LiveData.tsx       coil / NIR rolling charts, tilt dial, signal quality
@@ -122,6 +129,7 @@ components/
   ui.tsx             shared status maps, panel, text swap, heatmap colour scale
 lib/
   types.ts           all data types (contracts below)
+  gemini.ts          what Gemini is told about the scan, and when to write the brief (tests: gemini.test.mjs)
   mode.ts            the modes (Simulated device, Device): the list, the current mode, switching (tests: mode.test.mjs)
   device.ts          whether a mode has a device to scan with; deviceStatus() is the stub for the device bridge
   mock.ts            head geometry, scan spot names, region names, the simulated device's signal stream
