@@ -27,6 +27,8 @@ Without the dashboard:
 .venv/bin/python tests/test_bridge.py    # the bridge and record_reply: roster, paused threads, delivery, silence
 .venv/bin/python tests/test_memory.py    # the re-scan update and clinician notes
 .venv/bin/python tests/test_voice.py     # call requests, decisions from a transcript, polling
+.venv/bin/python tests/test_device.py        # the device bridge on synthetic streams: protocol, calibration, spot capture, HTTP
+.venv/bin/python tests/test_device_tools.py  # read_scan and request_rescan against a patched bridge
 ```
 
 None of them calls a model or the network.
@@ -37,7 +39,7 @@ None of them calls a model or the network.
 flowchart TD
     medic([Medic, dashboard]) -- "Run scan" --> lead
     lead[Triage lead<br/>create_deep_agent]
-    lead -- "read_scan → /scan.json" --> device[(Device<br/>mock scans)]
+    lead -- "read_scan → /scan.json" --> device[(Device<br/>probe via the device bridge,<br/>or mock scans)]
     lead -- recall_baseline --> store[(LangGraph Store<br/>SQLite)]
     lead -- "plan_hypotheses → /hypotheses.json" --> fs[[Agent file system]]
     lead -- "task x4, in parallel" --> R["Region agents<br/>frontal · temporal · parietal · occipital"]
@@ -126,7 +128,7 @@ A patient's first approved scan becomes the baseline. The mock device returns a 
 
 | Tool | Who | Why |
 |---|---|---|
-| `read_scan` | lead | The only way in for device data: 8 spots, coil signal and NIR each. Mock scans for now; this is the one function to replace when hardware arrives |
+| `read_scan` | lead | The only way in for device data: 8 spots, coil signal and NIR each. Mock scans in Simulated device mode; in Device mode (scan `device`) the 8 spots the medic read on the probe, from the device bridge (`lucid/device`) |
 | `recall_baseline` | lead | Loads the patient's first approved scan from the store |
 | `plan_hypotheses` | lead | Writes the coarse sweep to `/hypotheses.json`, split by region agent |
 | `forward_sim` | region agents, skeptic | The reading a hypothesis would produce on the head model. Also how an agent adds a hypothesis that is not in the sweep, with a note on why |
@@ -249,7 +251,8 @@ Extended thinking is switched off: every step is a short tool turn, and thinking
 ## Honest limits
 
 - The transport (unit, ETA, origin) and the medic's notes (age, mechanism, GCS, pupils, vitals) are simulated from `lucid/config.py`, like the device. No dispatch, GPS or patient-record link.
-- No hardware. `read_scan` serves three mock scans: `temporal_bleed`, `clear`, `uncertain`. The re-scan returns cleaner mock readings for the spots the medic was asked to redo.
+- Simulated device mode serves three mock scans: `temporal_bleed`, `clear`, `uncertain`; its re-scan returns cleaner mock readings for the spots the medic was asked to redo.
+- Device mode reads the probe through the device bridge. That path is tested on synthetic streams only (`tests/test_device.py`, `tests/test_device_tools.py`); the head model has not been calibrated against bench readings, so fit scores on real readings are not yet meaningful. See [`../docs/validation.md`](../docs/validation.md).
 - The head model is a coarse 2D proxy. pyEIT solves an electrical-impedance forward problem; we map its boundary voltages to a coil signal in dB and add a simple NIR absorption term. It is not a validated solver for the device.
 - One bleed per hypothesis. Volumes are good to about 5 mL at best; neighbouring volumes often tie.
 - The uncertain mock scan is picked so that a re-scan resolves it; with other noise draws it can stay uncertain.

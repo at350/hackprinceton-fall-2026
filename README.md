@@ -2,9 +2,9 @@
 
 Dashboard for **Lucid**, a handheld brain-bleed screener (HackPrinceton Fall 2026, Healthcare track). A medic moves the device over 8 spots around the head; the laptop shows the bleed-likelihood map filling in, live device signals, region simulations ranked by fit, and an AI agent that explains the result and asks the medic to approve next steps. A second view shows the same agent run as an n8n-style workflow trace.
 
-The dashboard is driven by a real LangChain deep agent in [`/agent`](agent/README.md): real plan steps, about 100 simulations filling the grid, and Approve / Reject pauses that resume the agent. Where the scans come from is the [mode](#modes): **Simulated device** (the default) replays the backend's mock scans; **Device** reads the Lucid device through a device bridge, which is not built yet.
+The dashboard is driven by a real LangChain deep agent in [`/agent`](agent/README.md): real plan steps, about 100 simulations filling the grid, and Approve / Reject pauses that resume the agent. Where the scans come from is the [mode](#modes): **Simulated device** (the default) replays the backend's mock scans; **Device** reads the Lucid probe through the device bridge (`python -m lucid.device`, see [Device mode](#device-mode)).
 
-For Photon's track the hand-off to the hospital is real. After the medic approves, the agent texts the on-call clinician the bleed map and a pre-alert over iMessage (Photon 2.0 beta), answers their texts on the same scan thread, and records ACCEPT or DECLINE; the dashboard shows all of it. The device, the scans and the patients are still simulated. How it works: [Hand-off over iMessage](agent/README.md#hand-off-over-imessage).
+For Photon's track the hand-off to the hospital is real. After the medic approves, the agent texts the on-call clinician the bleed map and a pre-alert over iMessage (Photon 2.0 beta), answers their texts on the same scan thread, and records ACCEPT or DECLINE; the dashboard shows all of it. In Simulated device mode the device, the scans and the patients are simulated; Device mode reads the probe (bench status in [`docs/validation.md`](docs/validation.md)). How it works: [Hand-off over iMessage](agent/README.md#hand-off-over-imessage).
 
 > The product name lives in one place: `PRODUCT_NAME` in `lib/config.ts`.
 
@@ -36,7 +36,24 @@ The switch in the middle of the header flips between **Dashboard** and **Agent t
 
 Switch with the menu under the device status, top left. The mode is remembered in the browser (localStorage) and shown in the address bar as `?mode=simulated` or `?mode=device`; opening a link with `?mode=` picks that mode, and the old `?live=1` still opens Simulated device. Switching drops the current run, so nothing from the other mode stays on screen; the patient stays the same until the page is reloaded.
 
-**Device mode needs the device bridge, which is not built yet.** Until then it shows the no-device state: the status reads **No device**, the scan panel says **No device connected** with the reason ("No device bridge running"), **Run scan** is disabled (hovering it gives the reason), and the live data card shows empty charts and dashes. Device presence comes from `deviceStatus()` in `lib/device.ts`, a stub for the bridge to answer.
+Without the device bridge, Device mode shows the no-device state: the status reads **No device**, the scan panel says **No device connected** with the reason ("No device bridge running", "No probe found on USB" or "Probe not calibrated"), **Run scan** is disabled (hovering it gives the reason), and the live data card shows empty charts and dashes. Device presence comes from `deviceStatus()` in `lib/device.ts`, which polls the bridge.
+
+### Device mode
+
+The probe's firmware is in [`firmware/`](firmware/README.md) and the wiring and parts in [`hardware/`](hardware/README.md). A third process, the device bridge, reads the probe's USB serial stream:
+
+```bash
+cd agent && .venv/bin/python -m lucid.device              # finds the Arduino, serves http://localhost:2025
+cd agent && .venv/bin/python -m lucid.device calibrate    # with the probe held still on a healthy reference
+```
+
+1. **Calibrate once per session.** Hold the probe on the empty phantom (or an uninjured spot) and run `calibrate`. It stores that reading as the healthy level in `agent/data/calibration.json`, which is what puts the probe's volts on the head model's dB and NIR scales. Until then the status reads **Probe not calibrated**.
+2. **Run scan.** Open `?mode=device` and press **Run scan**. The scan panel shows the spot to read. Hold the probe still on it for about a second and the bridge takes the reading, then move to the next; a noisy reading is marked weak contact.
+3. **The agent runs** when all 8 spots are in, on those readings, exactly as it does on a mock scan. If it asks for a re-scan of weak spots, approve, then read those spots again; it waits up to 90 s.
+
+`python -m lucid.device --simulate` serves a synthetic stream with no probe attached, for trying the dashboard. It is not a model of the hardware: steady signals with a little noise.
+
+What has and has not been checked is in [`docs/validation.md`](docs/validation.md). In short: the bridge, the agent tools and the dashboard are tested against synthetic streams; the firmware and the calibration have not yet been run on the probe from this code.
 
 Modes are defined once, in `MODES` in `lib/mode.ts`: an id, a label, a one-line description, `agent` (whether the real agent drives the dashboard) and `source` (`"mock"` or `"device"`). Adding a mode is one more entry there. The module also exports the current mode (`getMode`), `useMode`, `setMode` and `isAgentMode`. Switching to a mode with a different engine (`agent` differs) reloads the page, so `isAgentMode(getMode())` holds for a page load. The components read `store` from `lib/store.ts`, which is where an engine for a non-agent mode would be chosen; here it is always the live store.
 

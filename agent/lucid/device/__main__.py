@@ -12,10 +12,28 @@ from .server import DEFAULT_PORT, serve
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Lucid device bridge")
+    ap.add_argument("command", nargs="?", choices=("serve", "calibrate", "status"), default="serve", help="serve (default), or ask a running bridge to calibrate / report its status")
     ap.add_argument("--serial", default=os.getenv("LUCID_SERIAL_PORT"), help="serial port of the probe (default: find it)")
     ap.add_argument("--http", type=int, default=int(os.getenv("LUCID_DEVICE_PORT", DEFAULT_PORT)), help="port to serve on")
     ap.add_argument("--simulate", action="store_true", help="no probe: a synthetic stream (not a model of the hardware)")
     args = ap.parse_args()
+
+    if args.command != "serve":
+        from . import client
+
+        client.URL = f"http://localhost:{args.http}"
+        try:
+            if args.command == "calibrate":
+                got = client._call("/calibrate", {})
+                print(f"Calibrated on {got['samples']} samples: coil {got['coil_v_ref']:.4f} V, light {got['nir_v_ref']:.4f} V is now the healthy level.")
+            else:
+                st = client.status()
+                print("Probe connected." if st["connected"] else f"No probe: {st['reason']}")
+                print("Calibrated " + st["calibration"]["taken_at"] + "." if st["calibrated"] else "Not calibrated.")
+                print(f"Scan: {len(st['done'])} of 8 spots" + (", complete." if st["complete"] else (f", reading spot {st['spot'] + 1}." if st["scanning"] else ".")))
+        except client.DeviceError as e:
+            raise SystemExit(str(e))
+        return
 
     bridge = Bridge(calibration=calibrate.load())
     source = SimulatedSource(bridge.on_sample) if args.simulate else SerialSource(bridge.on_sample, port=args.serial)
