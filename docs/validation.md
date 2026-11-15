@@ -32,28 +32,69 @@ Run these in order once the probe is connected, and record the results in the ta
 
 **2. Signal versus noise.** Ten readings at one spot on the empty phantom, then ten with the target under the coil.
 
-| | Mean coil (dB) | Std (dB) | Mean NIR | Std |
-| --- | --- | --- | --- | --- |
-| Empty phantom | | | | |
-| Target under the coil | | | | |
+The "Predicted" columns are what the head model gives for its calibration case (a 22 mL epidural bleed at the left temporal spot). They are targets to compare against, not measurements. The "Measured" columns are empty until someone reads the real probe.
 
-**3. Blind localisation.** A teammate places the target (or leaves it out) without telling the person scanning. Ten trials.
+| | Predicted coil (dB) | Measured coil (dB) | Measured std (dB) | Predicted NIR | Measured NIR | Measured std |
+| --- | --- | --- | --- | --- | --- | --- |
+| Empty phantom | -38.2 | | | 0.612 | | |
+| Target under the coil | about -42.6 | | | about 0.54 | | |
+
+A reading counts as steady when the coil's std is under 0.15 dB and the NIR's is under 0.010. These are the limits `spots.py` uses to mark a spot "weak".
+
+**2b. Pattern across the eight spots.** One scan with the target at the left temporal spot.
+
+| Spot | Predicted coil (dB) | Measured coil (dB) | Predicted NIR | Measured NIR |
+| --- | --- | --- | --- | --- |
+| Frontal | -38.2 | | 0.61 | |
+| R frontal | -38.2 | | 0.61 | |
+| R temporal | -38.2 | | 0.61 | |
+| R parietal | -38.2 | | 0.61 | |
+| Occipital | -38.2 | | 0.61 | |
+| L parietal | -38.8 | | 0.61 | |
+| L temporal | -42.6 | | 0.54 | |
+| L frontal | -38.6 | | 0.61 | |
+
+The shape to look for is one deep dip at the target spot, small dips at its two neighbours, and a flat line elsewhere. The NIR reading should drop only at the target spot.
+
+**3. Blind localisation.** A teammate places the target (or leaves it out) without telling the person scanning. Ten trials. The placements below are a suggested mix of both sides, front and back, and three empty runs; the teammate shuffles the order.
 
 | Trial | Target placed at | Lucid's result | Correct side? |
 | --- | --- | --- | --- |
-| 1 | | | |
-| 2 | | | |
-| 3 | | | |
-| 4 | | | |
-| 5 | | | |
-| 6 | | | |
-| 7 | | | |
-| 8 | | | |
-| 9 | | | |
-| 10 | | | |
+| 1 | L temporal | | |
+| 2 | none | | |
+| 3 | R parietal | | |
+| 4 | L temporal | | |
+| 5 | Occipital | | |
+| 6 | none | | |
+| 7 | R temporal | | |
+| 8 | L frontal | | |
+| 9 | R frontal | | |
+| 10 | none | | |
 
-**4. Empty phantom.** Five scans with no target. Count how many end in "No bleed seen".
+Report the outcome as "N of 10", whatever N is.
 
-**5. Repeatability.** The same setup scanned three times. Note whether the region is the same each time.
+**4. Empty phantom.** Five scans with no target. The expected result each time is "No bleed seen".
+
+| Scan | Result |
+| --- | --- |
+| 1 | |
+| 2 | |
+| 3 | |
+| 4 | |
+| 5 | |
+
+**5. Repeatability.** The same setup scanned three times. The region should be the same each time. A suggested tolerance for the coil reading at the target spot is 0.3 dB between scans (twice the weak-contact limit; this number is not in the code).
+
+| Scan | Region reported | Coil at target spot (dB) |
+| --- | --- | --- |
+| 1 | | |
+| 2 | | |
+| 3 | | |
+
+**Phantom record.**
+
+| Container | Liquid | Salt concentration | Target | Target position and depth |
+| --- | --- | --- | --- | --- |
+| | | | | |
 
 Record the phantom's make-up (container, liquid, salt concentration, target) with the results, because a salt-water target is more conductive than blood and gives a larger signal than a real bleed would.
