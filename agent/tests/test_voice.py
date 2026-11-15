@@ -3,6 +3,7 @@
 Run from agent/: .venv/bin/python tests/test_voice.py
 """
 
+import re
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -389,6 +390,91 @@ def test_result_uses_last_user_note_when_decision_is_consistent():
     ]})
     assert result["decision"] == "accept"
     assert result["note"] == "Still accepting."
+
+
+def test_anything_else_responses_do_not_change_a_confirmed_patient_decision():
+    followups = ("No.", "Nope.", "That's all.", "No thanks.")
+    for followup in followups:
+        result = voice._result({"transcript": [
+            {"role": "assistant", "text": "Just to confirm, you're accepting the patient?"},
+            {"role": "user", "text": "Yes."},
+            {"role": "assistant", "text": "Anything else I can help with?"},
+            {"role": "user", "text": followup},
+        ]})
+        assert result["decision"] == "accept", (followup, result)
+
+    declined = voice._result({"transcript": [
+        {"role": "assistant", "text": "So that's a decline?"},
+        {"role": "user", "text": "Correct."},
+        {"role": "assistant", "text": "Anything else I can help with?"},
+        {"role": "user", "text": "No thanks."},
+    ]})
+    assert declined["decision"] == "decline"
+
+
+def test_yes_to_anything_else_is_not_a_patient_decision():
+    result = voice._result({"transcript": [
+        {"role": "assistant", "text": "Anything else I can help with?"},
+        {"role": "user", "text": "Yes."},
+    ]})
+
+    assert result["decision"] == "none"
+    assert result["note"] == ""
+
+
+def test_a_separately_confirmed_opposite_readback_reverses_the_decision():
+    result = voice._result({"transcript": [
+        {"role": "assistant", "text": "Just to confirm, you're accepting the patient?"},
+        {"role": "user", "text": "Yes."},
+        {"role": "assistant", "text": "Anything else I can help with?"},
+        {"role": "user", "text": "Actually, I decline the patient."},
+        {"role": "assistant", "text": "So that's a decline?"},
+        {"role": "user", "text": "Yes."},
+    ]})
+
+    assert result["decision"] == "decline"
+
+
+def test_unconfirmed_reversal_and_contradictory_decisions_stay_undecided():
+    unconfirmed_reversal = voice._result({"transcript": [
+        {"role": "assistant", "text": "Just to confirm, you're accepting the patient?"},
+        {"role": "user", "text": "Yes."},
+        {"role": "user", "text": "Actually, I decline the patient."},
+        {"role": "assistant", "text": "So that's a decline?"},
+        {"role": "user", "text": "No."},
+    ]})
+    contradictory = voice._result({"transcript": [
+        {"role": "assistant", "text": "Just to confirm, you're accepting the patient?"},
+        {"role": "user", "text": "Yes."},
+        {"role": "user", "text": "I decline the patient."},
+    ]})
+
+    assert unconfirmed_reversal["decision"] == "none"
+    assert contradictory["decision"] == "none"
+
+
+def test_natural_unconfirmed_reversal_needs_a_new_confirmation():
+    for reversal in ("Actually, we cannot take them.", "Actually, I cannot accept.", "We are full."):
+        result = voice._result({"transcript": [
+            {"role": "assistant", "text": "You're accepting the patient?"},
+            {"role": "user", "text": "Yes."},
+            {"role": "assistant", "text": "Anything else you need?"},
+            {"role": "user", "text": reversal},
+        ]})
+        assert result["decision"] == "none", reversal
+
+
+def test_prompt_pins_both_closings_and_limits_followups_after_decisions():
+    prompt = voice.INSTRUCTIONS
+    lower = prompt.lower()
+    assert 'Great, I\'ll text you a recap.' in prompt
+    assert 'Understood. I\'ll let the medic know and text you a recap.' in prompt
+    assert re.search(
+        r"(?:(?:at most|no more than) two.{0,100}anything else.{0,100}(?:in a row|consecutive)"
+        r"|never ask anything else more than twice in a row)",
+        lower,
+    )
+    assert re.search(r"(?:refusal|voicemail).{0,140}(?:no follow.?up|do not ask|stop speaking|without saying anything further)", lower)
 
 
 def test_affirmative_readback_answers_single_option_assistant_question():

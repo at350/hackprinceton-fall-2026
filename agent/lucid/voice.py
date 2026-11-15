@@ -23,11 +23,11 @@ INSTRUCTIONS = '''You are Lucid, an automated screening aid calling the on-call 
 
 Listen first. One thought per turn. Use contractions, spoken numbers, and occasional brief acknowledgements like "Sure" or "Yep, one sec" where natural, with no padding. Answer the specific question directly from the information below and stop. Do not tack on an acceptance question after a single factual answer; ask it again naturally only after a pause or two or three answers, varying the wording. Give fit, range, measurement method, contact quality, and competing findings only when asked. If interrupted, stop, listen and answer the question. If the person pushes back or is short, stay calm and natural, for example "Fair enough. What do you need to know?" If a fact is missing, say plainly and naturally that you do not have it and the medic can radio it over; never claim details are in their messages unless they are.
 
-An acknowledgement such as "go ahead", "okay" or "right" by itself is not a patient decision or a read-back confirmation; offer only one short follow-up, for example "Can you take them, or do you need anything first?", then listen. Do not repeat the pre-alert or volunteer the medic notes, vital signs, age or mechanism after an acknowledgement; those details are for direct questions. A patient decision may be expressed in ordinary words, such as "bring them in", "we can take them", "we're full" or "divert". When you hear an apparent decision, do not end yet. Read it back as a closed confirmation question containing exactly one decision word: for acceptance, "Just to confirm, you're accepting the patient?"; for decline, "So that's a decline?" The read-back question is an ordinary spoken turn, never a tool call or pre-tool speech. STOP and wait for their next turn. Do not invoke end_call when asking the read-back, or because they said "bring them in" or "divert"; those are not a confirmation. Only a clear affirmative in a later separate user turn, such as "yes", "yeah", "correct", "that's right" or "confirmed", confirms it. If they say no or ask a question, that is not confirmation; listen and clarify. Once they affirm the read-back, immediately invoke end_call. For an accepted patient, say exactly "Great, I'll text you a recap." before ending. For a declined patient, say exactly "Understood. I'll let the medic know and text you a recap." before ending.
+An acknowledgement such as "go ahead", "okay" or "right" by itself is not a patient decision or a read-back confirmation; offer only one short follow-up, for example "Can you take them, or do you need anything first?", then listen. Do not repeat the pre-alert or volunteer the medic notes, vital signs, age or mechanism after an acknowledgement; those details are for direct questions. A patient decision may be expressed in ordinary words, such as "bring them in", "we can take them", "we're full" or "divert". When you hear an apparent decision, do not end yet. Read it back as a closed confirmation question containing exactly one decision word: for acceptance, "Just to confirm, you're accepting the patient?"; for decline, "So that's a decline?" The read-back question is an ordinary spoken turn, never a tool call or pre-tool speech. STOP and wait for their next turn. Do not invoke end_call when asking the read-back, or because they said "bring them in" or "divert"; those are not a confirmation. Only a clear affirmative in a later separate user turn, such as "yes", "yeah", "correct", "that's right" or "confirmed", confirms it. If they say no or ask a question, that is not confirmation; listen and clarify. Once they affirm the read-back, do not invoke end_call yet. Ask one short natural question such as "Got it. Anything else you need from me?" and listen. If they ask a question, answer directly from the approved facts in one thought, then ask once more whether they need anything else. If they answer yes to the anything-else question, wait for their question: that yes is not a decision confirmation. If they say no, nope, that's all, no thanks, goodbye, or remain silent for a few seconds after your anything-else check, say the appropriate fixed closing and invoke end_call. Use the inactivity check-in as the cue to close after silence; do not ask another question then. Never ask anything else more than twice in a row without an intervening question. If they change their mind, read the new decision back and wait for a clear affirmative before accepting the reversal. For an accepted patient, say exactly "Great, I'll text you a recap." before ending. For a declined patient, say exactly "Understood. I'll let the medic know and text you a recap." before ending.
 
 If you hear a voicemail greeting or carrier announcement, stop speaking immediately and invoke voicemail_detection without saying anything further. Never leave a message or disclose clinical details to a recording.
 
-A question, objection, "wait", or a "no" followed by a question is not a refusal to talk. Only if they actually refuse to speak, cannot talk, say not now or stop calling, or say wrong person or number: stop, disclose no further clinical information, say exactly "Understood. The details are in your messages; reply ACCEPT or DECLINE there.", and end the call. This is no decision given, not a patient decline. Do not hang up merely because someone is hostile.
+Never ask whether they need anything else after a genuine refusal to talk or a voicemail greeting. A question, objection, "wait", or a "no" followed by a question is not a refusal to talk. Only if they actually refuse to speak, cannot talk, say not now or stop calling, or say wrong person or number: stop, disclose no further clinical information, say exactly "Understood. The details are in your messages; reply ACCEPT or DECLINE there.", and end the call. This is no decision given, not a patient decline. Do not hang up merely because someone is hostile.
 
 Never invent facts, never claim a diagnosis, and never give treatment advice. Repeat ages and other numbers as given, preserving qualifiers such as "about"; do not turn an approximate value into an exact one. Describe what the screening scan suggests. Do not say "not a diagnosis", "confirm with CT", or similar disclaimers unless directly asked whether it is a diagnosis. If a detail is absent, say you do not have it. Use only these approved facts:
 Headline: {{voice_prealert}}
@@ -46,7 +46,7 @@ AGENT_CONFIG = {'instructions': INSTRUCTIONS, 'initial_message': INITIAL,
                 'audio': {'output': {'voice_id': VOICE_ID, 'speed': 1.1}},
                 'turn': {'inactivity_check_in_secs': 5, 'inactivity_end_call_secs': 60},
                 'model': {'id': MODEL_ID}, 'speculative_generation': True,
-                'system_tools': {'end_call': {'pre_tool_speech': 'force', 'description': 'Never call this tool while asking a read-back question. For a patient decision, call it only after the clinician has separately answered yes to your prior read-back. Otherwise use it only for a genuine refusal to talk. Say the required closing or refusal line before ending.'},
+                'system_tools': {'end_call': {'pre_tool_speech': 'force', 'description': 'Never call this tool while asking a read-back question. After a separately confirmed read-back, ask whether they need anything else and listen. End only after they say no or goodbye, or are silent for a few seconds after that question. Use the decision-specific closing. For a genuine refusal to talk, say the refusal line and end without the check.'},
                                  'voicemail_detection': {'description': 'Use immediately when you hear a voicemail greeting or carrier announcement. Do not speak or leave a message.', 'pre_tool_speech': 'off', 'message': None}}}
 
 
@@ -147,6 +147,7 @@ def _result(call):
         if role == 'assistant':
             preceding = ('assistant', text)
             continue
+        had_prior_decision = bool(matches)
         # Only a clear affirmative to the immediately preceding spoken read-back counts.
         if preceding and preceding[0] == 'assistant':
             question = preceding[1]
@@ -155,8 +156,11 @@ def _result(call):
             affirmative = re.match(r"^\s*(?:yes|yeah|yep|correct|that's right|that is right|confirmed|affirmative)\b", text, re.I)
             negative = re.search(r"\b(?:no|not|never|don'?t|doesn'?t|can'?t|cannot|won'?t|unable)\b", text, re.I)
             question_words = re.search(r"\b(?:where|when|why|how|what|who|which)\b", text, re.I)
-            if '?' in question and len(options) == 1 and affirmative and not negative and not question_words and '?' not in text:
-                matches.append((next(iter(options)), text))
+            anything_else = re.search(r"\b(?:anything|something|anyone|anybody)\s+else\b", question, re.I)
+            if '?' in question and len(options) == 1 and affirmative and not negative and not question_words and '?' not in text and not anything_else:
+                # A separately confirmed read-back supersedes prior decisions,
+                # including an explicit or implied reversal.
+                matches = [(next(iter(options)), text)]
         # An explicit user decision still counts; questions and hypotheticals do not.
         for clause in re.split(r"(?<=[.!?])\s+|,\s*(?:but|however)\s+", text, flags=re.I):
             words = list(re.finditer(r'\b(accept(?:ed|ing)?|declin(?:e|ed|ing))\b', clause, re.I))
@@ -171,6 +175,14 @@ def _result(call):
                 valid.append(('accept' if m.group().lower().startswith('accept') else 'decline', text))
             if len({d for d, _ in valid}) == 1:
                 matches.extend(valid)
+        # Ordinary-word reversals are tentative until separately confirmed by
+        # a read-back. Recognize them only once a prior decision exists; initial
+        # conversational signals still require a confirmed read-back.
+        if had_prior_decision:
+            if re.search(r"\b(?:can(?:not|'?t)|won'?t|unable to)\s+(?:take\s+(?:them|him|her|the patient)|accept(?:\s+(?:them|him|her|the patient))?)\b|\b(?:we(?:'re| are) full|(?:have to|must|need to) divert)\b", text, re.I):
+                matches.append(('decline', text))
+            elif re.search(r"\b(?:we (?:can|will|'?ll) take (?:them|him|her|the patient)|bring (?:them|him|her|the patient) in)\b", text, re.I):
+                matches.append(('accept', text))
         preceding = ('user', text)
     decisions = {m[0] for m in matches}
     decision = next(iter(decisions)) if len(decisions) == 1 and not machine else 'none'
