@@ -1,5 +1,5 @@
 import { SAMPLE_RATE_HZ } from "./config";
-import { devicePresence } from "./device";
+import { bridgeStatus, devicePresence, spotsFrom, startDeviceScan, watchDevice } from "./device";
 import { type Tagged, mergeHandoff, parseTagged, sameHandoff } from "./handoff";
 import { REGIONS, deviceBuffer, deviceSample, initialSpots } from "./mock";
 import { type Mode, getMode, modeDef, subscribeMode } from "./mode";
@@ -26,7 +26,8 @@ export const AGENT_URL = process.env.NEXT_PUBLIC_LANGGRAPH_URL ?? "http://localh
 export const ASSISTANT_ID = "lucid";
 
 // Mock scans the backend can replay (the Simulated device mode).
-export type ScanCase = "temporal_bleed" | "clear" | "uncertain";
+// "device": the scan the medic read on the probe (Device mode); the others are the backend's mock scans.
+export type ScanCase = "temporal_bleed" | "clear" | "uncertain" | "device";
 export const SCAN_CASES: { id: ScanCase; label: string }[] = [
   { id: "temporal_bleed", label: "Temporal bleed" },
   { id: "clear", label: "Clear" },
@@ -249,6 +250,9 @@ export class LiveStore {
   private listeners = new Set<() => void>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private unsubscribeMode: (() => void) | null = null;
+  private unwatchDevice: (() => void) | null = null;
+  // Device mode: the medic is reading the 8 spots on the probe; the agent run starts when all are in.
+  private collecting = false;
   private sampleClock = 0;
   private runStart = 0;
   private busy = false; // a run is streaming or waiting for the medic
@@ -301,6 +305,7 @@ export class LiveStore {
     this.sampleClock = performance.now();
     this.timer = setInterval(() => this.tick(), 50);
     this.unsubscribeMode = subscribeMode(() => this.syncMode());
+    this.unwatchDevice = watchDevice(() => this.onDevice());
     this.syncMode();
   }
 
@@ -309,11 +314,19 @@ export class LiveStore {
     this.timer = null;
     this.unsubscribeMode?.();
     this.unsubscribeMode = null;
+    this.unwatchDevice?.();
+    this.unwatchDevice = null;
   }
 
-  /** "Run scan": a fresh thread for the chosen mock scan. Needs a device. */
+  /** "Run scan": a fresh thread for the chosen mock scan, or for the scan read on the probe. Needs a device. */
   restart(scan: ScanCase = this.lastCase) {
     if (!devicePresence(this.mode).connected) return;
+    if (modeDef(this.mode).source === "device") return this.collect();
+    this.launch(scan);
+  }
+
+  /** Start the agent run on a scan. */
+  private launch(scan: ScanCase) {
     this.clear(scan);
     this.state = { ...this.state, device: "scanning", scanStartedAt: 0 };
     this.timeline = { ...idleTimeline(), scanAt: 0 };
@@ -322,11 +335,50 @@ export class LiveStore {
     this.emit();
   }
 
+  /** Device mode: ask the bridge to read the 8 spots; onDevice() launches the agent when they are in. */
+  private collect() {
+    this.clear(null);
+    this.collecting = true;
+    this.state = { ...this.state, device: "scanning", currentSpot: 0 };
+    this.emit();
+    startDeviceScan().catch((err: unknown) => {
+      if (!this.collecting) return;
+      this.collecting = false;
+      this.set({ device: devicePresence(this.mode).connected ? "connected" : "disconnected", currentSpot: null });
+      this.say(`The probe could not start a scan: ${err instanceof Error ? err.message : "the device bridge did not answer"}`, "agent");
+      this.rebuild();
+      this.emit();
+    });
+  }
+
+  /** The bridge's status changed: device presence, and spot progress while the medic scans. */
+  private onDevice() {
+    if (modeDef(this.mode).source !== "device") return;
+    const status = bridgeStatus();
+    if (this.collecting) {
+      if (!status?.connected) {
+        this.collecting = false;
+        this.set({ device: "disconnected", currentSpot: null, spots: initialSpots() });
+        this.say("The probe disconnected before the scan finished. Press Run scan to start again.", "agent");
+        this.rebuild();
+      } else if (status.complete) {
+        this.collecting = false;
+        return this.launch("device");
+      } else {
+        this.set({ spots: spotsFrom(this.state.spots, status), currentSpot: status.spot });
+      }
+    } else if (!this.busy && this.state.device !== "scanning") {
+      this.set({ device: devicePresence(this.mode).connected ? "connected" : "disconnected" });
+    }
+    this.emit();
+  }
+
   /** After a mode switch: no run, nothing left from the other mode. The patient stays (one per page load). */
   private syncMode() {
     const mode = getMode();
     if (mode === this.mode) return;
     this.mode = mode;
+    this.collecting = false;
     this.clear(null);
     deviceBuffer.clear();
     this.emit();
@@ -336,7 +388,7 @@ export class LiveStore {
   private clear(start: ScanCase | null) {
     this.bridge?.stop();
     this.bridge = null;
-    if (start) this.lastCase = start;
+    if (start && start !== "device") this.lastCase = start;
     this.pendingStart = start;
     this.state = initialState(this.mode, this.state.run + 1, this.state.view);
     this.timeline = idleTimeline();

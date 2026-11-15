@@ -209,6 +209,7 @@ function ViewSwitch() {
 
 export function Header() {
   const mode = useMode();
+  useDash((s) => s.device); // re-render when the device bridge's answer changes
   const device = devicePresence(mode);
   const [scanCase, setScanCase] = useState<ScanCase>("temporal_bleed");
   return (

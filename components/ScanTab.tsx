@@ -100,6 +100,7 @@ export function ScanTab() {
   const current = useDash((s) => s.currentSpot);
   const run = useDash((s) => s.run);
   const scanning = useDash((s) => s.device === "scanning");
+  useDash((s) => s.device); // re-render when the device bridge's answer changes
   const device = devicePresence(useMode());
   const done = spots.filter((s) => s.state === "done").length;
 
