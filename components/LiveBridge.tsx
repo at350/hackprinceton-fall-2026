@@ -27,6 +27,8 @@ export default function LiveBridge({ run }: { run: number }) {
     // The region agents' own messages stay out of the lead's chat. (The hook reads
     // this option but only types it for typed deep agents.)
     filterSubagentMessages: true,
+    // A hot reload rebuilds the hook's stream mid-run; this joins the run again (run id in sessionStorage).
+    reconnectOnMount: true,
     threadId,
     onThreadId: setThreadId,
     onCreated: (meta: { run_id: string }) => void own.current.add(meta.run_id),
@@ -61,6 +63,8 @@ export default function LiveBridge({ run }: { run: number }) {
           // Simulation events are emitted inside the region agents.
           streamSubgraphs: true,
           streamMode: [...STREAM_MODE],
+          // Lets a rejoin replay the run from its start.
+          streamResumable: true,
           optimisticValues: input?.messages ? (prev) => ({ messages: [...(prev.messages ?? []), ...input.messages!] }) : undefined,
         }),
       stop: () => void latest.current.stop(),

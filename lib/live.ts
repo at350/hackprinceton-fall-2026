@@ -805,5 +805,10 @@ export class LiveStore {
   }
 }
 
-// One store per browser tab, only in live mode.
-export const live = LIVE ? new LiveStore() : null;
+// One store per browser tab, only in live mode. A hot reload re-runs this module
+// whenever a file it imports is saved; the store (and the run it holds) survives
+// it, with the class's new code swapped in.
+const kept = globalThis as { __lucidLive?: LiveStore };
+export const live = LIVE
+  ? (kept.__lucidLive = kept.__lucidLive ? Object.setPrototypeOf(kept.__lucidLive, LiveStore.prototype) : new LiveStore())
+  : null;
