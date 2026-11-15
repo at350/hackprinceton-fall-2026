@@ -10,7 +10,7 @@ Three packages:
 ```bash
 python -m lucid_ui                          # open http://localhost:8765, pick a head, press Start scan
 python -m lucid_ui --serial /dev/ttys004    # the board (or `python -m lucid_sim stream --pty`)
-python -m lucid_ui --replay runs/human_L_temporal.csv
+python -m lucid_ui --replay runs/human_L_temporal.csv   # a recording (make one with `python -m lucid_sim generate`, below)
 python -m lucid_ui --port 8770              # if 8765 is taken
 ```
 
