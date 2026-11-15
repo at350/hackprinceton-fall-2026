@@ -18,6 +18,8 @@ from lucid import photon, physics
 from lucid.backend import backend, baseline_path, notes_path
 from lucid.config import COARSE_VOLUMES, DEFAULT_PATIENT, DEFAULT_SCAN, ETA_MIN, MAX_HYPOTHESES, MAX_NEW_PER_CALL, MEDIC_NOTES, ORIGIN, SIM_PACE_S, UNIT
 from lucid.decision import decide, describe
+from lucid.device import SCAN_ID as DEVICE_SCAN
+from lucid.device import client as device
 
 NO_BLEED = "no-bleed"
 SCAN_FILE = "/scan.json"
@@ -129,11 +131,18 @@ async def read_scan(runtime: ToolRuntime) -> Command:
     and saves the same table to /scan.json for the other agents.
     """
     case = runtime.state.get("scan_id") or DEFAULT_SCAN
-    if case not in physics.MOCK_CASES:
-        return _reply(runtime, f"Unknown scan '{case}'. Available: {', '.join(physics.MOCK_CASES)}.")
-    # No hardware yet: the mock device returns the 15-minutes-later scan once a baseline exists.
+    if case != DEVICE_SCAN and case not in physics.MOCK_CASES:
+        return _reply(runtime, f"Unknown scan '{case}'. Available: {', '.join((*physics.MOCK_CASES, DEVICE_SCAN))}.")
     has_baseline = await _read_json(baseline_path(_patient(runtime))) is not None
-    scan = physics.mock_scan(case, rescan=has_baseline)
+    if case == DEVICE_SCAN:
+        # Device mode: the 8 spots the medic just read on the probe, from the device bridge (lucid/device).
+        try:
+            scan = {"case": DEVICE_SCAN, "taken_at": None, "spots": await asyncio.to_thread(device.read_scan)}
+        except device.DeviceError as e:
+            return _reply(runtime, f"Can't read the device: {e}")
+    else:
+        # Simulated device: the mock returns the 15-minutes-later scan once a baseline exists.
+        scan = physics.mock_scan(case, rescan=has_baseline)
     taken = datetime.now(UTC).isoformat(timespec="seconds")
     # Simulated like the device: which unit has the patient and how far out it is (lucid/config.py).
     transport = {"unit": UNIT, "eta_min": ETA_MIN, "origin": ORIGIN, "as_of": taken}
@@ -201,7 +210,14 @@ async def request_rescan(spots: list[int], reason: str, runtime: ToolRuntime) ->
     weak = weak_spots(old)
     if not old or not spots or not set(spots) <= set(weak) or state.get("rescans"):
         return _reply(runtime, f"Not possible: a re-scan is offered once per scan, and only for weak-contact spots (currently {weak or 'none'}).")
-    scan = physics.mock_scan(old["case"], rescan=old.get("later_scan", False), reseat=tuple(spots))
+    if old["case"] == DEVICE_SCAN:
+        # The bridge reads those spots again as the medic re-seats the probe, and this waits for it.
+        try:
+            scan = {"case": DEVICE_SCAN, "taken_at": None, "spots": await asyncio.to_thread(device.rescan, list(spots))}
+        except device.DeviceError as e:
+            return _reply(runtime, f"The re-scan did not complete: {e} The first readings stand.")
+    else:
+        scan = physics.mock_scan(old["case"], rescan=old.get("later_scan", False), reseat=tuple(spots))
     scan |= {"taken_at": datetime.now(UTC).isoformat(timespec="seconds"), "patient_id": old["patient_id"], "later_scan": old.get("later_scan", False), "transport": old.get("transport"),
              "medic_notes": old.get("medic_notes")}
     for stale in (*map(sims_file, physics.LOBES), REVIEW_FILE):  # results for the old readings no longer count
