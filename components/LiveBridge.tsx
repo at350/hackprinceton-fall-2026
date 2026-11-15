@@ -15,9 +15,12 @@ const POLL_MS = 2000;
  * starts on the same thread when the clinician texts back.
  */
 export default function LiveBridge({ run }: { run: number }) {
-  // Dev aid: ?thread=<id> opens an existing thread instead of waiting for Run scan.
-  const [threadId, setThreadId] = useState<string | null>(() =>
-    run === 0 && process.env.NODE_ENV !== "production" ? new URLSearchParams(location.search).get("thread") : null,
+  // The run's thread when a hot reload remounted this bridge. Dev aid: ?thread=<id> opens an
+  // existing thread instead of waiting for Run scan.
+  const [threadId, setThreadId] = useState<string | null>(
+    () =>
+      live.thread(run) ??
+      (run === 0 && process.env.NODE_ENV !== "production" ? new URLSearchParams(location.search).get("thread") : null),
   );
   // Runs this page started; any other run on the thread is the bridge's.
   const own = useRef(new Set<string>());
@@ -27,8 +30,6 @@ export default function LiveBridge({ run }: { run: number }) {
     // The region agents' own messages stay out of the lead's chat. (The hook reads
     // this option but only types it for typed deep agents.)
     filterSubagentMessages: true,
-    // A hot reload rebuilds the hook's stream mid-run; this joins the run again (run id in sessionStorage).
-    reconnectOnMount: true,
     threadId,
     onThreadId: setThreadId,
     onCreated: (meta: { run_id: string }) => void own.current.add(meta.run_id),
@@ -38,6 +39,10 @@ export default function LiveBridge({ run }: { run: number }) {
   const stream = useStream<LiveValues>(options);
   const latest = useRef(stream);
   const synced = useRef<unknown[]>([]);
+
+  useEffect(() => {
+    if (threadId) live.setThread(run, threadId);
+  }, [threadId, run]);
 
   useEffect(() => {
     latest.current = stream;
@@ -55,6 +60,28 @@ export default function LiveBridge({ run }: { run: number }) {
     live.sync(run, snap);
   });
 
+  // A hot reload rebuilds the hook: it comes back idle, without the thread's messages
+  // or the run it was streaming (the store keeps what it showed). Join that run again,
+  // or read the thread if it is over.
+  const rejoining = useRef(false);
+  useEffect(() => {
+    if (!threadId || stream.isLoading || rejoining.current || !live.behind(run, stream.messages.length)) return;
+    rejoining.current = true;
+    const client = stream.client;
+    void (async () => {
+      try {
+        const [newest] = await client.runs.list(threadId, { limit: 1 });
+        if (newest?.status === "pending" || newest?.status === "running")
+          await latest.current.joinStream(newest.run_id, undefined, { streamMode: [...STREAM_MODE] }).catch(() => {});
+        if (!latest.current.isLoading) live.syncState(run, await client.threads.getState<LiveValues>(threadId), true);
+      } catch {
+        // The server is busy or down: the chat keeps what it showed.
+      } finally {
+        rejoining.current = false;
+      }
+    })();
+  });
+
   useEffect(() => {
     const handle: LiveBridgeHandle = {
       submit: (input, resume) =>
@@ -63,8 +90,11 @@ export default function LiveBridge({ run }: { run: number }) {
           // Simulation events are emitted inside the region agents.
           streamSubgraphs: true,
           streamMode: [...STREAM_MODE],
-          // Lets a rejoin replay the run from its start.
+          // The run carries on when the stream drops (a hot reload), and a rejoin replays it from its start.
           streamResumable: true,
+          // Always the thread's latest checkpoint. The hook would otherwise send its own branch
+          // head, which a hot reload leaves stale: an approval then resumed from the start.
+          checkpoint: null,
           optimisticValues: input?.messages ? (prev) => ({ messages: [...(prev.messages ?? []), ...input.messages!] }) : undefined,
         }),
       stop: () => void latest.current.stop(),

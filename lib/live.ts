@@ -280,8 +280,11 @@ export class LiveStore {
   // `wire` came from a thread-state read rather than the hook (see syncState).
   private polled = false;
   private tags = new Map<string, Tagged | null>();
+  // This run's thread, so a bridge that a hot reload remounted opens it again.
+  // Read with `?? null`: a store kept across a hot reload has no value for a field added since.
+  private threadId: string | null = null;
 
-  subscribe = (fn: () => void) => {
+  subscribe =(fn: () => void) => {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
   };
@@ -351,6 +354,7 @@ export class LiveStore {
     this.handoffRecord = null;
     this.external = false;
     this.polled = false;
+    this.threadId = null;
     this.busy = false;
     this.streaming = false;
     this.failed = false;
@@ -378,6 +382,14 @@ export class LiveStore {
 
   detach(handle: LiveBridgeHandle) {
     if (this.bridge === handle) this.bridge = null;
+  }
+
+  setThread(run: number, id: string) {
+    if (run === this.state.run) this.threadId = id;
+  }
+
+  thread(run: number) {
+    return run === this.state.run ? (this.threadId ?? null) : null;
   }
 
   /** Called once the bridge for this run is mounted: send the scan trigger. */
@@ -482,8 +494,9 @@ export class LiveStore {
   }
 
   /** Fallback for a run the bridge started that was missed or could not be joined: the thread's state, read directly. */
-  syncState(run: number, state: { values?: LiveValues | null; tasks?: { interrupts?: unknown[] }[] }) {
-    if (run !== this.state.run || this.busy || this.external) return;
+  // `lost`: the hook dropped the run it was streaming (a hot reload), so the thread wins even over a run in progress.
+  syncState(run: number, state: { values?: LiveValues | null; tasks?: { interrupts?: unknown[] }[] }, lost = false) {
+    if (run !== this.state.run || (!lost && (this.busy || this.external))) return;
     const values = state.values ?? {};
     const interrupts = (state.tasks ?? []).flatMap((t) => t.interrupts ?? []);
     this.sync(run, { values, messages: values.messages ?? [], interrupt: interrupts.length ? interrupts : undefined, isLoading: false, error: undefined });
@@ -505,6 +518,11 @@ export class LiveStore {
   /** Whether this page's own run is idle, so a new run on the thread is someone else's. */
   idle(run: number) {
     return run === this.state.run && !this.busy && !this.external;
+  }
+
+  /** Whether the hook holds fewer of this run's messages than the chat shows: a hot reload rebuilt it. */
+  behind(run: number, messages: number) {
+    return run === this.state.run && messages < this.wire.messages.length;
   }
 
   fail(run: number, err: unknown) {
