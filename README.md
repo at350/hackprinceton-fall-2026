@@ -33,6 +33,7 @@
   <img src="https://img.shields.io/badge/Python-3.12-3776ab?logo=python&logoColor=white" alt="Python 3.12">
   <img src="https://img.shields.io/badge/Arduino-Uno-00878f?logo=arduino&logoColor=white" alt="Arduino">
   <img src="https://img.shields.io/badge/Photon-iMessage-34c759?logo=imessage&logoColor=white" alt="Photon iMessage">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue" alt="MIT License"></a>
 </p>
 
 > [!IMPORTANT]
@@ -58,6 +59,11 @@ Built in one weekend at **HackPrinceton Fall 2026** (Princeton University, Novem
 <p align="center">
   <a href="https://youtu.be/IY0Rr7l58Eg"><img src="media/demo-video.jpg" alt="Watch the Lucid demo on YouTube" width="80%"></a><br>
   <sub>▶ <a href="https://youtu.be/IY0Rr7l58Eg">Watch the demo on YouTube</a></sub>
+</p>
+
+<p align="center">
+  <img src="media/dashboard-scan.jpg" alt="Lucid dashboard: Bleed likely, L temporal, 22 mL, with the bleed map on the cortex, live coil and NIR traces, and the agent asking the medic to approve the pre-alert" width="100%"><br>
+  <sub>A finished scan: the bleed map on the cortex, live probe signals, and the agent waiting for the medic to approve the pre-alert</sub>
 </p>
 
 ## 💡 Why we built it
@@ -152,6 +158,17 @@ The agent may be *more* cautious than the rule, but never less: a proposal that 
 ### 🖥️ A dashboard a medic can follow
 
 One laptop screen streams the whole run. It shows a likelihood map on a 3D cortex, live coil and NIR traces with a tilt dial, about 100 simulation cards ranked by fit, and an agent panel with the plan, the approval cards and the surgeon's texts. A **Dashboard / Agent trace** switch redraws the same run as an n8n-style node canvas. The verdict is the largest text on screen and always pairs an icon with a label, so colour is never the only signal.
+
+<table>
+  <tr>
+    <td width="50%"><img src="media/dashboard-simulations.jpg" alt="Simulations tab: four region agents and bleed hypotheses ranked by fit, best fit 0.91"></td>
+    <td width="50%"><img src="media/dashboard-agent-trace.jpg" alt="Agent trace: n8n-style canvas of the triage agent, region subagents and tools, paused at medic approval"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Simulations: four region agents, every hypothesis ranked by fit</sub></td>
+    <td align="center"><sub>Agent trace: the same run as a node canvas</sub></td>
+  </tr>
+</table>
 
 **Google Gemini** writes a four-line hand-off brief from the dashboard's own numbers, and every approved scan is archived to **MongoDB Atlas** (optional).
 
@@ -453,5 +470,9 @@ If a change to `app/globals.css` doesn't show up while `npm run dev` is running,
 - The clinicians and health-system leaders who shaped Lucid: **Toni Hadjiev**, hospitalist at Concord Hospital, NH; **Yangbo Du**, SDG implementer; and four clinicians and researchers who spoke with us under NDA. Their input is why every result ends in a destination and a receiving clinician, and why the pre-alert carries the transport unit and ETA.
 - **HackPrinceton**, **CoStar** for adding to the first-place prize, **Justin Bojarski**, **LangChain** (Eugene Liu and Caroline di Vittorio) and **Amazon** (Aymane Omari, Ali Ozdener and Sainyam Kapoor), plus the **Photon**, **Peri** and **MLH** teams.
 - The cortex mesh is FreeSurfer's fsaverage6 ([license](public/models/FREESURFER-LICENSE.txt)). The head model is solved with [pyEIT](https://github.com/eitcom/pyEIT).
+
+## License
+
+[MIT](LICENSE). The fsaverage6 cortex mesh in `public/models/` is a modified FreeSurfer dataset under its own [license](public/models/FREESURFER-LICENSE.txt).
 
 <p align="center"><sub>Lucid is a screening aid, not a diagnosis. Confirm with CT.</sub></p>
